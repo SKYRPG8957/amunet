@@ -449,6 +449,10 @@ function minecraftLocalServerUri(name: string, port: number) {
   return `minecraft://?addExternalServer=${encodeURIComponent(`${name || 'Luma Proxy'}|127.0.0.1:${port}`)}`;
 }
 
+function minecraftLaunchUri() {
+  return 'minecraft://';
+}
+
 function App() {
   const [adminMode] = useState(() => isAdminRoute());
   const [tab, setTab] = useState<Tab>(() => (isAdminRoute() ? 'admin' : 'servers'));
@@ -599,8 +603,8 @@ function App() {
 
     if (proxyPass.ready && proxyPass.joinUri) {
       setAutoOpenProxyJoin(false);
-      window.location.assign(proxyPass.joinUri);
-      setToast('Minecraft 친구/LAN 월드로 참가를 이어갑니다.');
+      window.location.assign(minecraftLaunchUri());
+      setToast('Minecraft 친구 탭의 LAN 월드에서 Luma를 선택하세요.');
     }
   }, [autoOpenProxyJoin, proxyPass.error, proxyPass.joinUri, proxyPass.ready]);
 
@@ -976,8 +980,8 @@ function App() {
         setJoinTarget(null);
 
         if (payload.proxypass.ready && payload.proxypass.joinUri) {
-          window.location.assign(payload.proxypass.joinUri);
-          setToast('ProxyPass 로컬 월드로 Minecraft를 여는 중입니다.');
+          window.location.assign(minecraftLaunchUri());
+          setToast('Minecraft 친구 탭의 LAN 월드에서 Luma를 선택하세요.');
           return;
         }
 
@@ -986,9 +990,9 @@ function App() {
             void navigator.clipboard?.writeText(payload.proxypass.authCode).catch(() => {});
           }
           window.open(payload.proxypass.authUri || 'https://www.microsoft.com/link', '_blank', 'noopener,noreferrer');
-          setToast('Microsoft 인증 코드를 입력하면 자동으로 Minecraft 참가를 이어갑니다.');
+          setToast('Microsoft 인증 후 Minecraft 친구 탭의 LAN 월드로 표시됩니다.');
         } else {
-          setToast('ProxyPass가 준비되면 자동으로 Minecraft 참가를 이어갑니다.');
+          setToast('ProxyPass가 준비되면 Minecraft 친구 탭에 Luma가 표시됩니다.');
         }
         setTab('profile');
         return;
@@ -1875,7 +1879,7 @@ function App() {
                   <div className="panel-heading">
                     <div>
                       <span className="eyebrow">PROXYPASS</span>
-                      <h2>{proxyPass.ready ? 'Minecraft 연결 준비됨' : proxyPass.phase === 'auth' ? 'Microsoft 인증 대기' : '연결 준비 중'}</h2>
+                      <h2>{proxyPass.ready ? '친구 탭에 표시됨' : proxyPass.phase === 'auth' ? 'Microsoft 인증 대기' : '연결 준비 중'}</h2>
                     </div>
                     <Wifi size={20} />
                   </div>
@@ -1885,7 +1889,7 @@ function App() {
                       <strong>{proxyPass.target?.name || 'Luma Proxy'}</strong>
                       <span>
                         {proxyPass.ready
-                          ? `127.0.0.1:${proxyPass.proxyPort}`
+                          ? `Minecraft > 플레이 > 친구 > LAN 게임`
                           : proxyPass.authCode
                             ? `인증 코드 ${proxyPass.authCode}`
                             : proxyPass.error || proxyPass.logs[0]?.line || 'ProxyPass 초기화 중'}

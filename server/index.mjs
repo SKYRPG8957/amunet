@@ -494,8 +494,8 @@ function publicProxyHost() {
   return proxyPassHost;
 }
 
-function localServerJoinUri(name, port = proxyPassPort) {
-  return `minecraft://?addExternalServer=${encodeURIComponent(`${name || 'Luma Proxy'}|${publicProxyHost()}:${port}`)}`;
+function localServerJoinUri() {
+  return 'minecraft://';
 }
 
 function emptyProxyPass() {

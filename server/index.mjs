@@ -8,7 +8,6 @@ import crypto from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { URL } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
-import bedrock from 'bedrock-protocol';
 import prismarineAuth from 'prismarine-auth';
 import WebSocket from 'ws';
 
@@ -71,6 +70,7 @@ const providerXboxEnabled = process.env.AMUNET_PROVIDER_XBOX
   ? process.env.AMUNET_PROVIDER_XBOX !== '0'
   : process.env.NODE_ENV !== 'production';
 const prewarmXboxEnabled = providerXboxEnabled && process.env.AMUNET_PREWARM_XBOX === '1';
+const legacyBedrockEnabled = process.env.AMUNET_LEGACY_BEDROCK === '1' || !process.pkg;
 const adminRefreshKey = process.env.AMUNET_ADMIN_REFRESH_KEY || process.env.ADMIN_REFRESH_KEY || '';
 const trustLocalApi = process.env.AMUNET_TRUST_LOCAL_API === '1' || process.env.NODE_ENV !== 'production';
 const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
@@ -97,6 +97,7 @@ let unifiedFeedCache = null;
 let unifiedRefreshPromise = null;
 let activeXboxBroadcast = null;
 let activeProxyPass = null;
+let bedrockModulePromise = null;
 let proxyPassInstall = {
   installing: false,
   stage: 'idle',
@@ -852,7 +853,7 @@ async function startProxyPass(input) {
     const java = await ensureJavaRuntime();
     const workDir = path.join(stateDir, 'proxypass');
     await writeProxyPassConfig(workDir, target, {
-      broadcastSession: Boolean(input?.broadcastSession),
+      broadcastSession: input?.broadcastSession ?? target.mode === 'nethernet',
     });
 
     const child = spawn(java.path, ['-jar', jarPath], {
@@ -2373,6 +2374,7 @@ async function startBridge(targetInput) {
   await stopBridge('Restarting bridge');
 
   const clients = [];
+  const bedrock = await getBedrockProtocol();
   const server = bedrock.createServer({
     host: '0.0.0.0',
     port: bridgePort,
@@ -2467,8 +2469,29 @@ function normalizePingResponse(target, ping) {
   };
 }
 
+async function getBedrockProtocol() {
+  if (!legacyBedrockEnabled) {
+    throw new ApiError(501, 'Legacy Bedrock transfer bridge is disabled in the packaged app. Use ProxyPass/Friends join.');
+  }
+
+  if (!bedrockModulePromise) {
+    bedrockModulePromise = import('bedrock-protocol')
+      .then((module) => module.default || module)
+      .catch((error) => {
+        bedrockModulePromise = null;
+        throw new ApiError(
+          501,
+          `Legacy Bedrock transfer bridge is unavailable in this build: ${error.message}`,
+        );
+      });
+  }
+
+  return bedrockModulePromise;
+}
+
 async function pingTarget(targetInput) {
   const target = normalizeTarget(targetInput);
+  const bedrock = await getBedrockProtocol();
   const ping = await Promise.race([
     bedrock.ping({
       host: target.host,
@@ -2506,10 +2529,10 @@ async function route(req, res) {
           supabaseCache: supabaseCacheEnabled,
           supabaseEdge: false,
           static: serveStaticEnabled,
-          bridge: operator,
+          bridge: operator && legacyBedrockEnabled,
           proxyPass: operator && proxyPassEnabled,
           xboxLogin: providerXboxEnabled && operator,
-          bedrockPing: operator,
+          bedrockPing: operator && legacyBedrockEnabled,
         },
       });
       return;

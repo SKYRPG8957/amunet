@@ -490,6 +490,7 @@ function App() {
   });
   const [bridge, setBridge] = useState<BridgeStatus>(emptyBridge);
   const [proxyPass, setProxyPass] = useState<ProxyPassStatus>(emptyProxyPass);
+  const [autoOpenProxyJoin, setAutoOpenProxyJoin] = useState(false);
   const [xbox, setXbox] = useState<XboxStatus>(emptyXbox);
   const [capabilities, setCapabilities] = useState<RuntimeCapabilities>(defaultCapabilities);
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
@@ -587,6 +588,21 @@ function App() {
     const id = window.setInterval(refreshXbox, 2500);
     return () => window.clearInterval(id);
   }, [xbox.pending, xbox.signedIn]);
+
+  useEffect(() => {
+    if (!autoOpenProxyJoin) return;
+
+    if (proxyPass.error) {
+      setAutoOpenProxyJoin(false);
+      return;
+    }
+
+    if (proxyPass.ready && proxyPass.joinUri) {
+      setAutoOpenProxyJoin(false);
+      window.location.assign(proxyPass.joinUri);
+      setToast('Minecraft 친구/LAN 월드로 참가를 이어갑니다.');
+    }
+  }, [autoOpenProxyJoin, proxyPass.error, proxyPass.joinUri, proxyPass.ready]);
 
   useEffect(() => {
     if (!toast) return;
@@ -953,9 +969,10 @@ function App() {
         const payload = await requestJson<{ proxypass: ProxyPassStatus }>('/api/proxypass/start', {
           method: 'POST',
           headers: operatorHeaders(),
-          body: JSON.stringify({ target: proxyTarget }),
+          body: JSON.stringify({ target: proxyTarget, broadcastSession: true }),
         });
         setProxyPass(payload.proxypass);
+        setAutoOpenProxyJoin(true);
         setJoinTarget(null);
 
         if (payload.proxypass.ready && payload.proxypass.joinUri) {
@@ -965,9 +982,13 @@ function App() {
         }
 
         if (payload.proxypass.phase === 'auth') {
-          setToast('열린 Microsoft 인증을 완료한 뒤 같은 월드에서 참가를 다시 누르세요.');
+          if (payload.proxypass.authCode) {
+            void navigator.clipboard?.writeText(payload.proxypass.authCode).catch(() => {});
+          }
+          window.open(payload.proxypass.authUri || 'https://www.microsoft.com/link', '_blank', 'noopener,noreferrer');
+          setToast('Microsoft 인증 코드를 입력하면 자동으로 Minecraft 참가를 이어갑니다.');
         } else {
-          setToast('ProxyPass가 시작 중입니다. 잠시 후 참가를 다시 누르세요.');
+          setToast('ProxyPass가 준비되면 자동으로 Minecraft 참가를 이어갑니다.');
         }
         setTab('profile');
         return;

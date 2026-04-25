@@ -2412,3 +2412,153 @@ button:disabled {
     padding-right: 40px;
   }
 }
+
+/* Eggnet-derived directory pass: real Eggnet is a narrow rail + simple list, not a card dashboard. */
+.arcade-directory {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  min-height: calc(100vh - 76px);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 12px;
+  background: #f8f9fb;
+  box-shadow: 0 4px 16px rgba(43, 39, 66, 0.08);
+}
+
+.directory-filter,
+.directory-detail,
+.directory-stats,
+.compact-providers {
+  display: none;
+}
+
+.directory-topbar {
+  align-items: flex-start;
+  min-height: 58px;
+  margin-bottom: 10px;
+}
+
+.directory-topbar h1 {
+  font-size: 18px;
+}
+
+.directory-actions {
+  align-items: center;
+}
+
+.eggnet-oauth-banner {
+  margin-bottom: 10px;
+}
+
+.eggnet-search-row {
+  position: static;
+  grid-template-columns: minmax(0, 1fr) 88px 38px;
+  gap: 8px;
+  border: 0;
+  border-radius: 16px;
+  padding: 0;
+  background: transparent;
+  backdrop-filter: none;
+}
+
+.eggnet-search-row .search-box {
+  min-height: 46px;
+  border-radius: 16px;
+  box-shadow: 0 3px 10px rgba(43, 39, 66, 0.12);
+}
+
+.eggnet-search-row select,
+.eggnet-search-row .icon-button {
+  min-height: 38px;
+  align-self: center;
+  border-radius: 12px;
+  box-shadow: 0 2px 8px rgba(43, 39, 66, 0.08);
+}
+
+.eggnet-card-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.egg-world-card {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  min-height: 92px;
+  border: 1px solid #e6eaf0;
+  border-radius: 12px;
+  padding: 12px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(43, 39, 66, 0.055);
+}
+
+.egg-world-card:hover {
+  border-color: #cfd7e3;
+  transform: none;
+}
+
+.world-head {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+
+.world-tags {
+  grid-column: 1 / 2;
+  margin-left: 54px;
+}
+
+.world-foot {
+  grid-template-columns: auto;
+  justify-items: end;
+}
+
+.egg-world-card .join-button {
+  width: 72px;
+  min-height: 38px;
+  background: #2f66d8;
+  box-shadow: none;
+}
+
+@media (max-width: 860px) {
+  .arcade-directory {
+    min-height: auto;
+    padding: 10px;
+    border-radius: 0;
+    border-inline: 0;
+  }
+
+  .directory-actions {
+    display: none;
+  }
+
+  .eggnet-search-row {
+    grid-template-columns: minmax(0, 1fr) 84px 38px;
+  }
+
+  .egg-world-card {
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .world-tags {
+    margin-left: 52px;
+  }
+
+  .world-foot {
+    grid-column: 1 / 2;
+    grid-template-columns: auto auto auto;
+    justify-items: start;
+    margin-left: 52px;
+  }
+
+  .egg-world-card .join-button {
+    grid-column: 2 / 3;
+    grid-row: 1 / 4;
+  }
+}

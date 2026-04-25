@@ -130,7 +130,11 @@ const PRESENCE_CACHE_KEY = 'luma:presence-feed:v1';
 const ADMIN_KEY_STORAGE_KEY = 'luma:admin-key:v1';
 const WORLD_CACHE_MS = 45_000;
 const PRESENCE_CACHE_MS = 120_000;
-const apiBase = (import.meta.env.VITE_STATUS_API_URL?.trim() || '').replace(/\/$/, '');
+const nativeShellApiBase =
+  typeof window !== 'undefined' && (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
+    ? 'http://127.0.0.1:8787'
+    : '';
+const apiBase = (nativeShellApiBase || import.meta.env.VITE_STATUS_API_URL?.trim() || '').replace(/\/$/, '');
 const defaultReleaseAssets = {
   windows: 'https://github.com/SKYRPG8957/amunet/releases/latest/download/luma-arcade-windows-setup.exe',
   android: 'https://github.com/SKYRPG8957/amunet/releases/latest/download/luma-arcade-android-debug.apk',
@@ -1050,6 +1054,32 @@ function App() {
                       <span>{provider.requiresLogin ? '연동 필요' : `${provider.count}개`}</span>
                     </div>
                   ))}
+                </div>
+
+                {!xbox.signedIn ? (
+                  <section className="login-banner eggnet-oauth-banner">
+                    <strong>프로필 탭에서 로그인하세요.</strong>
+                    <span>Eggnet은 Microsoft 공식 OAuth만 사용하며, Luma는 공개 피드를 먼저 보여주고 계정 기능은 로그인 후 켭니다.</span>
+                    <button className="text-button" type="button" onClick={() => setTab('profile')}>
+                      로그인 / 앱 설치
+                    </button>
+                  </section>
+                ) : null}
+
+                <div className="search-row eggnet-search-row">
+                  <label className="search-box">
+                    <Search size={18} />
+                    <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="서버 검색..." />
+                  </label>
+                  <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} aria-label="정렬">
+                    <option value="recommended">추천</option>
+                    <option value="latest">최신</option>
+                    <option value="players">인원순</option>
+                    <option value="korean">한국어 우선</option>
+                  </select>
+                  <button className="icon-button" type="button" aria-label="필터" onClick={() => setSourceMode(sourceMode === 'eggnet' ? 'all' : 'eggnet')}>
+                    <Filter size={17} />
+                  </button>
                 </div>
 
                 {worlds.error ? <div className="notice danger">{worlds.error}</div> : null}

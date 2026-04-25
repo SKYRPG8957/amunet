@@ -179,9 +179,9 @@ const isNativeShellRuntime =
   typeof window !== 'undefined' && (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
     ? true
     : typeof window !== 'undefined' && Boolean((window as typeof window & { __TAURI__?: unknown }).__TAURI__);
-const nativeShellApiBase = isNativeShellRuntime ? LOCAL_API_BASE : '';
 const configuredApiBase = (import.meta.env.VITE_STATUS_API_URL?.trim() || '').replace(/\/$/, '');
-const apiBase = (nativeShellApiBase || configuredApiBase).replace(/\/$/, '');
+const supabaseEdgeApiBase = isBackendConfigured ? `${supabaseUrl.replace(/\/$/, '')}/functions/v1/amunet-api` : '';
+const apiBase = (configuredApiBase || supabaseEdgeApiBase).replace(/\/$/, '');
 const defaultReleaseAssets = {
   windows: 'https://github.com/SKYRPG8957/amunet/releases/latest/download/luma-arcade-windows-setup.exe',
   android: 'https://github.com/SKYRPG8957/amunet/releases/latest/download/luma-arcade-android-debug.apk',
@@ -243,6 +243,15 @@ function shouldProbeLocalApi(url: string) {
   return isNativeShellRuntime && prefersLocalApi(url);
 }
 
+function requestTimeoutMs(url: string, endpoint: string) {
+  if (!endpoint.startsWith(LOCAL_API_BASE)) return 10_000;
+  if (url.startsWith('/api/proxypass/start')) return 240_000;
+  if (url.startsWith('/api/bridge/start')) return 12_000;
+  if (url.startsWith('/api/status/bedrock')) return 10_000;
+  if (url.startsWith('/api/worlds/')) return 20_000;
+  return 2500;
+}
+
 function localOnlyError(url: string, reason: string) {
   if (url.startsWith('/api/proxypass')) {
     return `PC 앱 브리지가 구버전이거나 꺼져 있습니다. 최신 Windows 앱을 설치한 뒤 앱을 완전히 다시 열어주세요. (${reason})`;
@@ -271,7 +280,7 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   for (const endpoint of endpoints) {
     try {
       const response = await fetch(endpoint, {
-        ...withTimeout(init, endpoint.startsWith(LOCAL_API_BASE) ? 1800 : 10_000),
+        ...withTimeout(init, requestTimeoutMs(url, endpoint)),
         headers,
       });
       const payload = await response.json().catch(() => ({}));

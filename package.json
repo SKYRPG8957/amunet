@@ -1,0 +1,58 @@
+{
+  "name": "luma-arcade",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:web": "vite --host 0.0.0.0",
+    "dev:api": "node server/index.mjs",
+    "start": "node server/index.mjs",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "inspect:eggnet": "node tools/inspect-eggnet.mjs",
+    "inspect:local": "node tools/inspect-local.mjs",
+    "supabase:functions:serve": "npx supabase functions serve amunet-api --env-file supabase/.env",
+    "supabase:functions:deploy": "npx supabase functions deploy amunet-api --no-verify-jwt",
+    "firebase:deploy": "npm run build && npx firebase-tools deploy --only hosting",
+    "cloudflare:dev": "npx wrangler dev",
+    "cloudflare:deploy": "npx wrangler deploy",
+    "cloudflare:pages:deploy": "npm run build && npx wrangler pages deploy dist --project-name luma-arcade",
+    "version:sync": "node tools/release/sync-version.mjs",
+    "version:set": "node tools/release/sync-version.mjs",
+    "android:prepare": "node tools/release/prepare-android.mjs",
+    "cap:add:android": "cap add android",
+    "cap:add:ios": "cap add ios",
+    "cap:sync": "npm run build && cap sync",
+    "android": "npm run cap:sync && cap open android",
+    "ios": "npm run cap:sync && cap open ios",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@capacitor/core": "^7.6.2",
+    "@supabase/supabase-js": "^2.104.1",
+    "@tauri-apps/api": "^2.10.1",
+    "bedrock-protocol": "^3.55.0",
+    "lucide-react": "^1.11.0",
+    "prismarine-auth": "^3.1.1",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5"
+  },
+  "overrides": {
+    "cmake-js": "^8.0.0"
+  },
+  "devDependencies": {
+    "@capacitor/android": "^7.6.2",
+    "@capacitor/cli": "^7.6.2",
+    "@capacitor/ios": "^7.6.2",
+    "@tauri-apps/cli": "^2.10.1",
+    "@types/node": "^25.6.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.0.1",
+    "concurrently": "^9.2.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.10"
+  }
+}

@@ -1,0 +1,29 @@
+name: Deploy Supabase Edge API
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - "supabase/functions/**"
+      - "supabase/migrations/**"
+      - ".github/workflows/deploy-supabase.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+      SUPABASE_PROJECT_REF: ${{ secrets.SUPABASE_PROJECT_REF }}
+      SUPABASE_DB_PASSWORD: ${{ secrets.SUPABASE_DB_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+      - name: Link project
+        run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
+      - name: Push database migrations
+        if: ${{ env.SUPABASE_DB_PASSWORD != '' }}
+        run: supabase db push --password "$SUPABASE_DB_PASSWORD"
+      - name: Deploy amunet-api
+        run: supabase functions deploy amunet-api --no-verify-jwt

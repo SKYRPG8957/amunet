@@ -1,0 +1,137 @@
+name: Build APK and Windows Installers
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  android-apk:
+    name: Android APK
+    runs-on: ubuntu-latest
+    env:
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      VITE_STATUS_API_URL: ${{ vars.VITE_STATUS_API_URL }}
+      VITE_RELEASES_URL: ${{ vars.VITE_RELEASES_URL }}
+      VITE_WINDOWS_DOWNLOAD_URL: ${{ vars.VITE_WINDOWS_DOWNLOAD_URL }}
+      VITE_ANDROID_DOWNLOAD_URL: ${{ vars.VITE_ANDROID_DOWNLOAD_URL }}
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - uses: android-actions/setup-android@v3
+      - run: npm ci
+      - run: npm run version:sync
+      - run: npm run build
+      - name: Generate Capacitor Android project
+        run: |
+          if [ ! -d android ]; then
+            npx cap add android
+          fi
+          npx cap sync android
+          npm run android:prepare
+      - name: Build APKs
+        working-directory: android
+        run: |
+          chmod +x ./gradlew
+          ./gradlew assembleDebug assembleRelease
+      - name: Sign release APK when keystore secrets exist
+        if: ${{ env.ANDROID_KEYSTORE_BASE64 != '' }}
+        working-directory: android
+        run: |
+          echo "$ANDROID_KEYSTORE_BASE64" | base64 -d > release.jks
+          BUILD_TOOLS="$(ls "$ANDROID_HOME/build-tools" | sort -V | tail -n 1)"
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" sign \
+            --ks release.jks \
+            --ks-key-alias "$ANDROID_KEY_ALIAS" \
+            --ks-pass "pass:$ANDROID_KEYSTORE_PASSWORD" \
+            --key-pass "pass:$ANDROID_KEY_PASSWORD" \
+            --out app/build/outputs/apk/release/luma-arcade-release-signed.apk \
+            app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/$BUILD_TOOLS/apksigner" verify app/build/outputs/apk/release/luma-arcade-release-signed.apk
+      - name: Collect Android artifacts
+        shell: bash
+        run: |
+          APP_VERSION="$(node -p "require('./package.json').version")"
+          mkdir -p release-artifacts/android
+          cp android/app/build/outputs/apk/debug/app-debug.apk "release-artifacts/android/luma-arcade-${APP_VERSION}+${GITHUB_RUN_NUMBER}-debug.apk"
+          if [ -f android/app/build/outputs/apk/release/luma-arcade-release-signed.apk ]; then
+            cp android/app/build/outputs/apk/release/luma-arcade-release-signed.apk "release-artifacts/android/luma-arcade-${APP_VERSION}+${GITHUB_RUN_NUMBER}-release-signed.apk"
+          elif [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk "release-artifacts/android/luma-arcade-${APP_VERSION}+${GITHUB_RUN_NUMBER}-release-unsigned.apk"
+          fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luma-android-apk
+          path: release-artifacts/android/*
+          if-no-files-found: error
+
+  windows-exe:
+    name: Windows EXE
+    runs-on: windows-latest
+    env:
+      VITE_SUPABASE_URL: ${{ vars.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ vars.VITE_SUPABASE_ANON_KEY }}
+      VITE_STATUS_API_URL: ${{ vars.VITE_STATUS_API_URL }}
+      VITE_RELEASES_URL: ${{ vars.VITE_RELEASES_URL }}
+      VITE_WINDOWS_DOWNLOAD_URL: ${{ vars.VITE_WINDOWS_DOWNLOAD_URL }}
+      VITE_ANDROID_DOWNLOAD_URL: ${{ vars.VITE_ANDROID_DOWNLOAD_URL }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - run: npm ci
+      - run: npm run version:sync
+      - run: npm run tauri:build
+      - name: Collect Windows artifacts
+        shell: pwsh
+        run: |
+          $version = node -p "require('./package.json').version"
+          New-Item -ItemType Directory -Force -Path release-artifacts/windows | Out-Null
+          Get-ChildItem src-tauri/target/release/bundle -Recurse -Include *.exe,*.msi |
+            ForEach-Object {
+              $name = "luma-arcade-$version+$env:GITHUB_RUN_NUMBER-$($_.Name)"
+              Copy-Item $_.FullName "release-artifacts/windows/$name"
+            }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: luma-windows-installers
+          path: release-artifacts/windows/*
+          if-no-files-found: error
+
+  github-release:
+    name: Publish GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    needs:
+      - android-apk
+      - windows-exe
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          files: release-artifacts/**/*

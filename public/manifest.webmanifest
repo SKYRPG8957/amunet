@@ -1,0 +1,17 @@
+{
+  "name": "Luma Arcade",
+  "short_name": "Luma",
+  "description": "Minecraft Bedrock world discovery and community",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f2f5f8",
+  "theme_color": "#2f66d8",
+  "icons": [
+    {
+      "src": "/app-icon.svg",
+      "sizes": "256x256",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}

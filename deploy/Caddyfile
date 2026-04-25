@@ -1,0 +1,10 @@
+:80 {
+  encode zstd gzip
+  reverse_proxy 127.0.0.1:8080
+}
+
+# Replace example.com with your domain after DNS points to the VPS.
+# example.com {
+#   encode zstd gzip
+#   reverse_proxy 127.0.0.1:8080
+# }

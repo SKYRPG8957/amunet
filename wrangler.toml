@@ -1,0 +1,25 @@
+name = "luma-arcade-edge-cache"
+main = "cloudflare/worker.js"
+compatibility_date = "2026-04-25"
+
+[vars]
+SUPABASE_API_BASE = "https://YOUR_PROJECT_REF.supabase.co/functions/v1/amunet-api"
+WORLDS_CACHE_SECONDS = "300"
+PRESENCE_CACHE_SECONDS = "600"
+SHORT_CACHE_SECONDS = "600"
+STALE_FALLBACK_SECONDS = "86400"
+MAX_SUPABASE_UPSTREAM_PER_DAY = "400"
+MAX_REQUESTS_PER_IP_PER_HOUR = "0"
+DISABLE_JOIN_UPSTREAM = "1"
+ALLOW_FORCE_REFRESH = "0"
+ALLOW_API_PROXY = "0"
+REQUIRE_KV_GUARD = "1"
+USE_KV_REFRESH_LOCK = "0"
+
+# Required for hard free-tier guards. Create with:
+# npx wrangler kv namespace create AMUNET_LIMITS
+# npx wrangler kv namespace create AMUNET_LIMITS --preview
+[[kv_namespaces]]
+binding = "AMUNET_LIMITS"
+id = "REPLACE_WITH_KV_NAMESPACE_ID"
+preview_id = "REPLACE_WITH_PREVIEW_KV_NAMESPACE_ID"

@@ -1,0 +1,20 @@
+services:
+  amunet:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 8080
+      AMUNET_SERVE_STATIC: "1"
+      AMUNET_PREWARM: "1"
+    ports:
+      - "8080:8080/tcp"
+      - "19132:19132/udp"
+    volumes:
+      - amunet-auth:/app/.amunet-auth
+
+volumes:
+  amunet-auth:

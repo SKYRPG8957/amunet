@@ -722,6 +722,28 @@ function App() {
     }
   }
 
+  async function openJoinTarget(world: ActivityWorld) {
+    setJoinTarget(world);
+
+    try {
+      const payload = await requestJson<{ handleId: string; joinUri: string }>('/api/join/simple', {
+        method: 'POST',
+        body: JSON.stringify({
+          serverId: world.serverId || world.id,
+        }),
+      });
+      if (payload.handleId || payload.joinUri) {
+        setJoinTarget({
+          ...world,
+          handleId: payload.handleId || world.handleId,
+          uri: payload.joinUri || world.uri,
+        });
+      }
+    } catch {
+      // Keep the selected feed item if refresh fails.
+    }
+  }
+
   async function randomJoin() {
     if (!filteredWorlds.length) {
       setToast('참가 가능한 월드가 없습니다.');
@@ -1109,9 +1131,9 @@ function App() {
                   <section className="login-banner eggnet-oauth-banner">
                     <strong>프로필 탭에서 로그인하세요.</strong>
                     <span>Eggnet은 Microsoft 공식 OAuth만 사용하며, Luma는 공개 피드를 먼저 보여주고 계정 기능은 로그인 후 켭니다.</span>
-                    <button className="text-button" type="button" onClick={() => setTab('profile')}>
-                      로그인 / 앱 설치
-                    </button>
+                      <button className="text-button" type="button" onClick={() => openAuth('login')}>
+                        로그인 / 앱 설치
+                      </button>
                   </section>
                 ) : null}
 
@@ -1166,7 +1188,7 @@ function App() {
                           {world.members}/{world.maxMembers || '?'}
                         </strong>
                       </div>
-                      <button className="join-button" type="button" onClick={() => setJoinTarget(world)}>
+                      <button className="join-button" type="button" onClick={() => openJoinTarget(world)}>
                         참가
                       </button>
                     </article>
@@ -1347,6 +1369,47 @@ function App() {
                 게스트 로그인
               </button>
             </section>
+
+            {authOpen && !cloudUser ? (
+              <section className="egg-inline-auth">
+                <div className="auth-tabs" aria-label="계정 모드">
+                  <button className={authMode === 'login' ? 'active' : ''} type="button" onClick={() => setAuthMode('login')}>
+                    로그인
+                  </button>
+                  <button className={authMode === 'signup' ? 'active' : ''} type="button" onClick={() => setAuthMode('signup')}>
+                    가입
+                  </button>
+                </div>
+                <form className="account-form pretty-auth modal-auth-form" onSubmit={submitCloudAuth}>
+                  {authMode === 'signup' ? (
+                    <label className="field">
+                      <span>닉네임</span>
+                      <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="표시할 이름" maxLength={24} />
+                    </label>
+                  ) : null}
+                  <label className="field">
+                    <span>이메일</span>
+                    <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email@example.com" type="email" />
+                  </label>
+                  <label className="field">
+                    <span>비밀번호</span>
+                    <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="6자 이상" type="password" minLength={6} />
+                  </label>
+                  <button className="primary-button full" type="submit" disabled={!email.trim() || password.length < 6 || busyAction === `cloud-${authMode}`}>
+                    {busyAction === `cloud-${authMode}` ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
+                    {authMode === 'signup' ? '계정 만들기' : '로그인'}
+                  </button>
+                </form>
+                <div className="inline-auth-actions">
+                  <button className="link-button" type="button" onClick={sendMagicLink} disabled={!email.trim() || busyAction === 'cloud-link'}>
+                    메일 링크 로그인
+                  </button>
+                  <button className="secondary-button" type="button" onClick={continueAsGuest}>
+                    게스트로 시작
+                  </button>
+                </div>
+              </section>
+            ) : null}
 
             <section className="install-panel profile-install-panel">
               <div className="install-copy">
@@ -1857,7 +1920,7 @@ function App() {
         </div>
       ) : null}
 
-      {authOpen && !cloudUser ? (
+      {authOpen && !cloudUser && tab !== 'profile' ? (
         <div className="modal-backdrop auth-backdrop" role="dialog" aria-modal="true" aria-label="Luma 로그인">
           <section className="auth-modal">
             <button className="modal-close" type="button" onClick={() => setAuthOpen(false)} aria-label="닫기">

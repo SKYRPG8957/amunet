@@ -1578,6 +1578,25 @@ function refreshUnifiedFeed({ includeXbox = true, xboxLimit = 250 } = {}) {
 
 async function resolveJoinTarget(input) {
   const handleId = String(input?.handleId || input?.handle || '').trim();
+  const serverId = String(input?.serverId || input?.id || '').trim();
+
+  if (serverId) {
+    const feed = await fetchPublicFeed({ force: true });
+    const world = feed.worlds.find((item) => item.serverId === serverId || item.id === serverId);
+
+    if (world?.handleId) {
+      return {
+        ok: true,
+        mode: 'server',
+        serverId: world.serverId,
+        joinerXuid: String(input?.joinerXuid || input?.xuid || ''),
+        handleId: world.handleId,
+        joinUri: world.uri,
+        nethernetId: world.nethernetId,
+        ts: Date.now(),
+      };
+    }
+  }
 
   if (handleId) {
     return {
@@ -1590,7 +1609,6 @@ async function resolveJoinTarget(input) {
     };
   }
 
-  const serverId = String(input?.serverId || input?.id || '').trim();
   if (!serverId) {
     throw new Error('serverId 또는 handleId가 필요합니다.');
   }

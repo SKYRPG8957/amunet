@@ -304,6 +304,23 @@ async function joinSimple(req: Request) {
   const url = new URL(req.url);
   const body = req.method === 'POST' ? await req.json().catch(() => ({})) : {};
   const handleId = String(body.handleId || body.handle || url.searchParams.get('handleId') || url.searchParams.get('handle') || '').trim();
+  const serverId = String(body.serverId || body.id || url.searchParams.get('serverId') || '').trim();
+
+  if (serverId) {
+    const worlds = await refreshEggnetFeed();
+    const world = worlds.find((item) => item.serverId === serverId || item.id === serverId);
+
+    if (world?.handleId) {
+      return json({
+        ok: true,
+        mode: 'fresh_server_handle',
+        serverId,
+        handleId: world.handleId,
+        joinUri: buildJoinUri(String(world.handleId)),
+        ts: Date.now(),
+      });
+    }
+  }
 
   if (handleId) {
     return json({
@@ -315,7 +332,6 @@ async function joinSimple(req: Request) {
     });
   }
 
-  const serverId = String(body.serverId || body.id || url.searchParams.get('serverId') || '').trim();
   if (!serverId) {
     return json({ ok: false, error: 'serverId 또는 handleId가 필요합니다.' }, 400);
   }

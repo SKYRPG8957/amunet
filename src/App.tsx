@@ -698,7 +698,7 @@ function App() {
   }
 
   async function startXboxLogin() {
-    if (isBackendConfigured && !cloudUser) {
+    if (isBackendConfigured && !cloudUser && !isDesktopApp && !Capacitor.isNativePlatform()) {
       setToast('먼저 Luma 계정으로 로그인하세요.');
       return;
     }

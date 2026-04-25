@@ -22,6 +22,13 @@ export type BridgeStatus = {
   bridgePort: number;
   version: string;
   lanAddresses: string[];
+  xboxBroadcast?: {
+    running: boolean;
+    sessionId: string | null;
+    handleId: string | null;
+    netherNetId: string | null;
+    startedAt: string | null;
+  } | null;
   clients: Array<{
     address: string;
     name: string;

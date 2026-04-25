@@ -16,5 +16,6 @@ supabase/.temp/
 *.local
 *.log
 artifacts/
+external/
 .DS_Store
 Thumbs.db

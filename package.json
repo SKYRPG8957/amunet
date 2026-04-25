@@ -1,7 +1,7 @@
 {
   "name": "luma-arcade",
   "private": true,
-  "version": "0.1.5",
+  "version": "0.1.6",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
@@ -38,7 +38,8 @@
     "lucide-react": "^1.11.0",
     "prismarine-auth": "^3.1.1",
     "react": "^19.2.5",
-    "react-dom": "^19.2.5"
+    "react-dom": "^19.2.5",
+    "ws": "^8.20.0"
   },
   "overrides": {
     "cmake-js": "^8.0.0"
@@ -48,11 +49,11 @@
     "@capacitor/cli": "^7.6.2",
     "@capacitor/ios": "^7.6.2",
     "@tauri-apps/cli": "^2.10.1",
-    "@yao-pkg/pkg": "^6.7.0",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
     "@vitejs/plugin-react": "^6.0.1",
+    "@yao-pkg/pkg": "^6.7.0",
     "concurrently": "^9.2.1",
     "typescript": "^6.0.3",
     "vite": "^8.0.10"

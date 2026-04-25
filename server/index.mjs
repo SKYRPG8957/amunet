@@ -4,10 +4,12 @@ import path from 'node:path';
 import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
 import { URL } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 import bedrock from 'bedrock-protocol';
 import prismarineAuth from 'prismarine-auth';
+import WebSocket from 'ws';
 
 const { Authflow, Titles } = prismarineAuth;
 
@@ -37,6 +39,7 @@ const apiPort = Number(process.env.PORT || process.env.AMUNET_STATUS_PORT || 878
 const apiHost = process.env.HOST || process.env.AMUNET_HOST || (process.env.NODE_ENV === 'production' ? '0.0.0.0' : '127.0.0.1');
 const bridgePort = Number(process.env.AMUNET_BRIDGE_PORT || 19132);
 const bridgeVersion = process.env.AMUNET_BEDROCK_VERSION || '26.10';
+const bridgeProtocol = Number(process.env.AMUNET_BEDROCK_PROTOCOL || 944);
 const allowPrivateHosts = process.env.AMUNET_ALLOW_PRIVATE_HOSTS === '1';
 const distDir = path.resolve(process.env.AMUNET_DIST_DIR || 'dist');
 const serveStaticEnabled = process.env.AMUNET_SERVE_STATIC !== '0';
@@ -75,6 +78,7 @@ let hostPresenceCache = null;
 let xboxDiscoverCache = null;
 let unifiedFeedCache = null;
 let unifiedRefreshPromise = null;
+let activeXboxBroadcast = null;
 
 const emptyBridge = {
   running: false,
@@ -403,6 +407,8 @@ function normalizeTarget(input) {
     name: name.slice(0, 48),
     host,
     port,
+    protocol: Number(input.protocol || bridgeProtocol),
+    version: String(input.version || bridgeVersion),
   };
 }
 
@@ -414,6 +420,15 @@ function bridgeStatus() {
     version: bridgeVersion,
     lanAddresses: getLanAddresses(),
     clients: activeBridge?.clients ?? [],
+    xboxBroadcast: activeXboxBroadcast
+      ? {
+          running: true,
+          sessionId: activeXboxBroadcast.sessionId,
+          handleId: activeXboxBroadcast.handleId,
+          netherNetId: activeXboxBroadcast.netherNetId,
+          startedAt: activeXboxBroadcast.startedAt,
+        }
+      : { running: false },
     events: eventLog,
   };
 }
@@ -545,6 +560,240 @@ async function startXboxLogin() {
   }
 
   return xboxStatus();
+}
+
+function randomNetherNetId() {
+  const high = BigInt(Math.floor(Math.random() * 0x7fffffff));
+  const low = BigInt(Math.floor(Math.random() * 0xffffffff));
+  return (high << 32n) | low;
+}
+
+function buildSessionDirectoryPayload({ connectionId, subscriptionId, xuid, netherNetId, target }) {
+  const sessionName = `Luma - ${target?.name || 'Minecraft World'}`;
+  return {
+    properties: {
+      system: {
+        joinRestriction: 'followed',
+        readRestriction: 'followed',
+        closed: false,
+      },
+      custom: {
+        hostName: sessionName,
+        ownerId: xuid,
+        worldName: sessionName,
+        version: String(target?.version || bridgeVersion),
+        MemberCount: 1,
+        MaxMemberCount: 20,
+        Joinability: 'joinable_by_friends',
+        rakNetGUID: '',
+        worldType: 'Survival',
+        protocol: Number(target?.protocol || bridgeProtocol),
+        BroadcastSetting: 3,
+        OnlineCrossPlatformGame: true,
+        CrossPlayDisabled: false,
+        TitleId: 0,
+        TransportLayer: 2,
+        LanGame: false,
+        isHardcore: false,
+        isEditorWorld: false,
+        levelId: `luma-${String(target?.id || target?.host || 'bridge').replace(/[^a-zA-Z0-9_-]/g, '-')}`,
+        SupportedConnections: [
+          {
+            ConnectionType: 3,
+            HostIpAddress: '',
+            HostPort: 0,
+            NetherNetId: netherNetId.toString(),
+          },
+        ],
+      },
+    },
+    members: {
+      me: {
+        constants: {
+          system: {
+            xuid,
+            initialize: true,
+          },
+        },
+        properties: {
+          system: {
+            active: true,
+            connection: connectionId,
+            subscription: {
+              id: subscriptionId,
+              changeTypes: ['everything'],
+            },
+          },
+        },
+      },
+    },
+  };
+}
+
+async function xboxSessionFetch(url, { method = 'GET', body = null, contractVersion = '107' } = {}) {
+  const token = await getXboxToken(false);
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Authorization: xboxAuthHeader(token),
+      Accept: 'application/json',
+      'Content-Type': 'application/json',
+      'x-xbl-contract-version': contractVersion,
+    },
+    body: body ? JSON.stringify(body) : null,
+    signal: AbortSignal.timeout(60_000),
+  });
+  const text = await response.text();
+  let payload = null;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    payload = { raw: text };
+  }
+  if (!response.ok) {
+    throw new Error(`Xbox Session API ${response.status}: ${payload?.message || payload?.raw || text || response.statusText}`);
+  }
+  return payload;
+}
+
+function connectRtaAndGetConnectionId() {
+  return new Promise(async (resolve, reject) => {
+    const token = await getXboxToken(false).catch(reject);
+    if (!token) return;
+    const timeout = setTimeout(() => reject(new Error('RTA connection timeout')), 20_000);
+    let settled = false;
+    let socket = null;
+
+    try {
+      socket = new WebSocket('wss://rta.xboxlive.com/connect', {
+        headers: {
+          Authorization: xboxAuthHeader(token),
+        },
+      });
+    } catch (error) {
+      clearTimeout(timeout);
+      reject(error);
+      return;
+    }
+
+    socket.on('open', () => {
+      socket.send('[1,1,"https://sessiondirectory.xboxlive.com/connections/"]');
+    });
+    socket.on('message', (dataRaw) => {
+      try {
+        const data = JSON.parse(String(dataRaw || '[]'));
+        const connectionId = data?.[4]?.ConnectionId;
+        if (!connectionId || settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        const xuid = token.userXUID;
+        socket.send(`[1,2,"https://social.xboxlive.com/users/xuid(${xuid})/friends"]`);
+        resolve({ connectionId, socket });
+      } catch {
+        // Ignore non-matching RTA frames.
+      }
+    });
+    socket.on('error', (event) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      reject(new Error(`RTA websocket error: ${event.message || 'unknown'}`));
+    });
+  });
+}
+
+async function publishXboxBridgeSession(target = activeBridge?.target) {
+  if (!target) {
+    throw new Error('브리지 대상이 필요합니다.');
+  }
+  if (!xboxToken?.XSTSToken) {
+    throw new Error('Xbox 로그인이 필요합니다.');
+  }
+
+  await stopXboxBroadcast('restarting broadcast');
+
+  const { connectionId, socket } = await connectRtaAndGetConnectionId();
+  const sessionId = crypto.randomUUID();
+  const subscriptionId = crypto.randomUUID();
+  const netherNetId = randomNetherNetId();
+  const xuid = xboxToken.userXUID;
+  const scid = '4fc10100-5f7a-4470-899b-280835760c07';
+  const template = 'MinecraftLobby';
+  const sessionPayload = buildSessionDirectoryPayload({
+    connectionId,
+    subscriptionId,
+    xuid,
+    netherNetId,
+    target,
+  });
+
+  await xboxSessionFetch(
+    `https://sessiondirectory.xboxlive.com/serviceconfigs/${scid}/sessionTemplates/${template}/sessions/${sessionId}`,
+    { method: 'PUT', body: sessionPayload, contractVersion: '107' },
+  );
+  const handle = await xboxSessionFetch('https://sessiondirectory.xboxlive.com/handles', {
+    method: 'POST',
+    contractVersion: '107',
+    body: {
+      version: 1,
+      type: 'activity',
+      sessionRef: {
+        scid,
+        templateName: template,
+        name: sessionId,
+      },
+    },
+  });
+  await xboxSessionFetch(`https://userpresence.xboxlive.com/users/xuid(${xuid})/devices/current/titles/current`, {
+    method: 'POST',
+    body: { state: 'active' },
+    contractVersion: '3',
+  });
+
+  const heartbeat = setInterval(async () => {
+    try {
+      await xboxSessionFetch(`https://userpresence.xboxlive.com/users/xuid(${xuid})/devices/current/titles/current`, {
+        method: 'POST',
+        body: { state: 'active' },
+        contractVersion: '3',
+      });
+      await xboxSessionFetch(
+        `https://sessiondirectory.xboxlive.com/serviceconfigs/${scid}/sessionTemplates/${template}/sessions/${sessionId}`,
+        { method: 'PUT', body: sessionPayload, contractVersion: '107' },
+      );
+    } catch (error) {
+      pushEvent('xbox-session', 'Xbox 세션 heartbeat 실패.', { message: error.message });
+    }
+  }, 30_000);
+  heartbeat.unref?.();
+
+  activeXboxBroadcast = {
+    sessionId,
+    handleId: handle?.id || handle?.handleId || null,
+    netherNetId: netherNetId.toString(),
+    socket,
+    heartbeat,
+    startedAt: new Date().toISOString(),
+  };
+  pushEvent('xbox-session', 'Xbox Live 친구 탭 세션을 방송했습니다.', {
+    sessionId,
+    handleId: activeXboxBroadcast.handleId,
+    netherNetId: activeXboxBroadcast.netherNetId,
+  });
+  return activeXboxBroadcast;
+}
+
+async function stopXboxBroadcast(reason = 'stopped') {
+  if (!activeXboxBroadcast) return;
+  const current = activeXboxBroadcast;
+  activeXboxBroadcast = null;
+  clearInterval(current.heartbeat);
+  try {
+    current.socket?.close?.();
+  } catch {
+    // Ignore close failure.
+  }
+  pushEvent('xbox-session', 'Xbox Live 세션 방송을 중지했습니다.', { reason });
 }
 
 async function xboxFetch(url, options = {}) {
@@ -1526,6 +1775,7 @@ async function stopBridge(reason = 'Bridge stopped') {
     return;
   }
 
+  await stopXboxBroadcast(reason);
   const bridge = activeBridge;
   activeBridge = null;
   await bridge.server.close(reason).catch(() => {});
@@ -1553,6 +1803,11 @@ async function startBridge(targetInput) {
 
   activeBridge = { server, target, clients };
   pushEvent('bridge', '브리지를 시작했습니다.', target);
+  if (xboxToken?.XSTSToken) {
+    publishXboxBridgeSession(target).catch((error) => {
+      pushEvent('xbox-session', 'Xbox Live 세션 방송 실패.', { message: error.message });
+    });
+  }
 
   server.on('connect', (client) => {
     const address = client.connection?.address || 'unknown';
@@ -1759,15 +2014,35 @@ async function route(req, res) {
 
     if (req.method === 'GET' && url.pathname === '/api/xbox/login/status') {
       assertOperator(req, 'Xbox 로그인 상태 조회');
+      if (xboxToken?.XSTSToken && activeBridge && !activeXboxBroadcast) {
+        publishXboxBridgeSession(activeBridge.target).catch((error) => {
+          pushEvent('xbox-session', 'Xbox Live 세션 방송 실패.', { message: error.message });
+        });
+      }
       writeJson(res, 200, { ok: true, xbox: xboxStatus() });
       return;
     }
 
     if (req.method === 'POST' && url.pathname === '/api/xbox/logout') {
       assertOperator(req, 'Xbox 로그아웃');
+      await stopXboxBroadcast('Xbox logout');
       xboxToken = null;
       xboxLogin = null;
       writeJson(res, 200, { ok: true, xbox: xboxStatus() });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/xbox/broadcast/start') {
+      assertOperator(req, 'Xbox 세션 방송');
+      const broadcast = await publishXboxBridgeSession(activeBridge?.target);
+      writeJson(res, 200, { ok: true, broadcast: bridgeStatus().xboxBroadcast || broadcast });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/xbox/broadcast/stop') {
+      assertOperator(req, 'Xbox 세션 방송 중지');
+      await stopXboxBroadcast('Stopped by user');
+      writeJson(res, 200, { ok: true, broadcast: bridgeStatus().xboxBroadcast });
       return;
     }
 

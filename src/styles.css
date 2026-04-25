@@ -2532,10 +2532,13 @@ button:disabled {
   min-height: 30px;
 }
 
-.install-panel,
 .app-settings-panel,
 .profile-layout.clean-profile {
   display: none;
+}
+
+.profile-install-panel {
+  margin-top: 12px;
 }
 
 .egg-profile-notice {
@@ -2667,7 +2670,16 @@ button:disabled {
 }
 
 :root[data-theme="dark"] .egg-profile-card {
-  background: #f8fafc;
+  background: var(--panel);
+}
+
+:root[data-theme="dark"] .egg-profile-state h2 {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .egg-profile-avatar {
+  color: #ded5ff;
+  background: #221a39;
 }
 
 :root[data-theme="dark"] .egg-profile-notice {

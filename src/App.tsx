@@ -485,6 +485,9 @@ function App() {
   const openWorlds = useMemo(() => worlds.value.filter((world) => !world.closed).length, [worlds.value]);
   const activeCountryCount = useMemo(() => Array.from(countryCounts.values()).filter((count) => count > 0).length, [countryCounts]);
   const accountName = cloudUser?.displayName || cloudUser?.email?.split('@')[0] || '게스트';
+  const profileSignedIn = Boolean(cloudUser) || xbox.signedIn;
+  const profileName = cloudUser ? accountName : xbox.signedIn ? 'Xbox 연동됨' : '로그아웃됨';
+  const profileStatus = cloudUser ? 'Luma 로그인됨' : xbox.signedIn ? 'Xbox 연동됨' : '로그아웃됨';
   const hasOAuthProvider = OAUTH_BUTTONS.some((provider) => oauthEnabled[provider.id]);
 
   async function refreshHealth(operatorKey = adminKey) {
@@ -1092,7 +1095,11 @@ function App() {
                       <Dice5 size={16} />
                       랜덤 참가
                     </button>
-                    <button className="primary-button" type="button" onClick={() => setTab('profile')}>
+                    <button
+                      className="primary-button"
+                      type="button"
+                      onClick={() => downloadFile(preferredDownload.href, preferredDownload.platform as 'Windows' | 'Android')}
+                    >
                       <Download size={16} />
                       앱 받기
                     </button>
@@ -1340,34 +1347,51 @@ function App() {
               </span>
             </section>
 
-            <section className="login-banner egg-profile-notice">
-              <strong>프로필 탭에서 로그인하세요.</strong>
-              <span>Microsoft 공식 OAuth만 사용하며 비밀번호 등 민감 정보는 수집하거나 접근하지 않습니다.</span>
-              <a href="https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow" target="_blank" rel="noreferrer">
-                OAuth에 대해 자세히 알아보기
-                <ExternalLink size={14} />
-              </a>
-            </section>
+            {!cloudUser ? (
+              <section className="login-banner egg-profile-notice">
+                <strong>프로필 탭에서 로그인하세요.</strong>
+                <span>Microsoft 공식 OAuth만 사용하며 비밀번호 등 민감 정보는 수집하거나 접근하지 않습니다.</span>
+                <a href="https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow" target="_blank" rel="noreferrer">
+                  OAuth에 대해 자세히 알아보기
+                  <ExternalLink size={14} />
+                </a>
+              </section>
+            ) : null}
 
             <section className="egg-profile-card">
               <div className="egg-profile-avatar">
                 <UserRound size={48} />
               </div>
               <div className="egg-profile-state">
-                <h2>{xbox.signedIn ? accountName : '로그아웃됨'}</h2>
-                <span className={xbox.signedIn ? 'signed' : ''}>{xbox.signedIn ? '로그인됨' : '로그아웃됨'}</span>
-                {xbox.xuid ? <p>XUID {xbox.xuid}</p> : null}
+                <h2>{profileName}</h2>
+                <span className={profileSignedIn ? 'signed' : ''}>{profileStatus}</span>
+                {cloudUser ? <p>{cloudUser.email || cloudUser.id}</p> : xbox.xuid ? <p>XUID {xbox.xuid}</p> : null}
               </div>
             </section>
 
             <section className="egg-profile-actions">
-              <button className="primary-button" type="button" onClick={() => openAuth('login')}>
-                <KeyRound size={16} />
-                로그인
-              </button>
-              <button className="secondary-button" type="button" onClick={continueAsGuest}>
-                게스트 로그인
-              </button>
+              {cloudUser ? (
+                <>
+                  <button className="primary-button" type="button" onClick={() => setTab('servers')}>
+                    <Gamepad2 size={16} />
+                    서버 보기
+                  </button>
+                  <button className="secondary-button" type="button" onClick={signOutSupabase} disabled={busyAction === 'supabase-logout'}>
+                    {busyAction === 'supabase-logout' ? <Loader2 className="spin" size={16} /> : <LogOut size={16} />}
+                    로그아웃
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button className="primary-button" type="button" onClick={() => openAuth('login')}>
+                    <KeyRound size={16} />
+                    로그인
+                  </button>
+                  <button className="secondary-button" type="button" onClick={continueAsGuest}>
+                    게스트 로그인
+                  </button>
+                </>
+              )}
             </section>
 
             {authOpen && !cloudUser ? (

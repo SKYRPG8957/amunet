@@ -237,6 +237,12 @@ function localOnlyApi(url: string) {
   return /^\/api\/(bridge|proxypass|xbox|status\/bedrock|worlds\/discover)/.test(url);
 }
 
+function shouldProbeLocalApi(url: string) {
+  if (url.startsWith('http')) return false;
+  if (localOnlyApi(url)) return true;
+  return isNativeShellRuntime && prefersLocalApi(url);
+}
+
 function localOnlyError(url: string, reason: string) {
   if (url.startsWith('/api/proxypass')) {
     return `PC 앱 브리지가 구버전이거나 꺼져 있습니다. 최신 Windows 앱을 설치한 뒤 앱을 완전히 다시 열어주세요. (${reason})`;
@@ -251,12 +257,13 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
     ...(init?.headers || {}),
   };
   const isLocalOnly = !url.startsWith('http') && localOnlyApi(url);
+  const useLocalApi = shouldProbeLocalApi(url);
   const endpoints = url.startsWith('http')
     ? [url]
     : isLocalOnly
       ? [`${LOCAL_API_BASE}${url}`]
     : [
-        ...(prefersLocalApi(url) && `${LOCAL_API_BASE}${url}` !== `${apiBase}${url}` ? [`${LOCAL_API_BASE}${url}`] : []),
+        ...(useLocalApi && `${LOCAL_API_BASE}${url}` !== `${apiBase}${url}` ? [`${LOCAL_API_BASE}${url}`] : []),
         apiBase ? `${apiBase}${url}` : url,
       ];
   let lastError: unknown = null;
@@ -540,9 +547,9 @@ function App() {
     loadChat();
     loadOAuthAvailability();
     loadReleaseInfo();
-    const id = window.setInterval(refreshBridge, 2200);
+    const id = isDesktopApp ? window.setInterval(refreshBridge, 2200) : null;
     return () => {
-      window.clearInterval(id);
+      if (id) window.clearInterval(id);
     };
   }, [adminMode]);
 

@@ -20,10 +20,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: supabase/setup-cli@v1
+      - name: Skip when Supabase token is not configured
+        if: ${{ env.SUPABASE_ACCESS_TOKEN == '' || env.SUPABASE_PROJECT_REF == '' }}
+        run: echo "SUPABASE_ACCESS_TOKEN or SUPABASE_PROJECT_REF is not configured. Skipping Edge deploy."
       - name: Link project
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
         run: supabase link --project-ref "$SUPABASE_PROJECT_REF"
       - name: Push database migrations
-        if: ${{ env.SUPABASE_DB_PASSWORD != '' }}
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' && env.SUPABASE_DB_PASSWORD != '' }}
         run: supabase db push --password "$SUPABASE_DB_PASSWORD"
       - name: Deploy amunet-api
+        if: ${{ env.SUPABASE_ACCESS_TOKEN != '' && env.SUPABASE_PROJECT_REF != '' }}
         run: supabase functions deploy amunet-api --no-verify-jwt

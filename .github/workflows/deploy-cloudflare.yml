@@ -27,6 +27,8 @@ jobs:
       VITE_RELEASES_URL: ${{ vars.VITE_RELEASES_URL }}
       VITE_WINDOWS_DOWNLOAD_URL: ${{ vars.VITE_WINDOWS_DOWNLOAD_URL }}
       VITE_ANDROID_DOWNLOAD_URL: ${{ vars.VITE_ANDROID_DOWNLOAD_URL }}
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -35,15 +37,20 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run build
+      - name: Skip when Cloudflare secrets are not configured
+        if: ${{ env.CLOUDFLARE_API_TOKEN == '' || env.CLOUDFLARE_ACCOUNT_ID == '' }}
+        run: echo "CLOUDFLARE_API_TOKEN or CLOUDFLARE_ACCOUNT_ID is not configured. Skipping Cloudflare deploy."
       - name: Deploy Worker
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           command: deploy
       - name: Deploy Pages
+        if: ${{ env.CLOUDFLARE_API_TOKEN != '' && env.CLOUDFLARE_ACCOUNT_ID != '' }}
         uses: cloudflare/wrangler-action@v3
         with:
-          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          accountId: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          apiToken: ${{ env.CLOUDFLARE_API_TOKEN }}
+          accountId: ${{ env.CLOUDFLARE_ACCOUNT_ID }}
           command: pages deploy dist --project-name=${{ vars.CLOUDFLARE_PAGES_PROJECT || 'luma-arcade' }}

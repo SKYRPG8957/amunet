@@ -88,15 +88,15 @@ button:disabled {
 
 .eggnet-app {
   display: grid;
-  grid-template-columns: 78px minmax(0, 1fr);
-  width: min(1280px, calc(100vw - 32px));
-  min-height: calc(100vh - 44px);
-  margin: 22px auto;
+  grid-template-columns: 68px minmax(0, 1fr);
+  width: 100vw;
+  min-height: 100vh;
+  margin: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 0;
   background: rgba(255, 255, 255, 0.94);
-  box-shadow: 0 24px 70px rgba(43, 39, 66, 0.14);
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .eggnet-app {
@@ -109,12 +109,12 @@ button:disabled {
   top: auto;
   z-index: 20;
   display: flex;
-  min-height: calc(100vh - 44px);
+  min-height: 100vh;
   flex-direction: column;
   gap: 10px;
   padding: 14px 8px;
   border-right: 1px solid var(--line);
-  background: #f0edf8;
+  background: #edf3f1;
 }
 
 :root[data-theme="dark"] .rail {
@@ -179,7 +179,7 @@ button:disabled {
   right: 2px;
   width: 25px;
   height: 25px;
-  background: #f0edf8;
+  background: #edf3f1;
 }
 
 .rail-brand strong {
@@ -219,11 +219,11 @@ button:disabled {
 .rail button.active {
   color: var(--blue);
   border-color: #d6cef3;
-  background: #eeeafd;
+  background: #ece5ff;
 }
 
 .theme-toggle {
-  margin-top: auto;
+  margin-top: 6px;
 }
 
 .rail button svg {
@@ -251,10 +251,14 @@ button:disabled {
 .shell {
   width: 100%;
   min-width: 0;
-  min-height: calc(100vh - 44px);
+  min-height: 100vh;
   margin: 0;
-  padding: 16px;
-  background: rgba(252, 251, 255, 0.9);
+  padding: 14px;
+  background:
+    linear-gradient(rgba(91, 108, 117, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(91, 108, 117, 0.055) 1px, transparent 1px),
+    #eef4f2;
+  background-size: 24px 24px;
 }
 
 :root[data-theme="dark"] .shell {
@@ -2535,7 +2539,32 @@ button:disabled {
 }
 
 .egg-profile-notice {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 38px;
   margin-bottom: 10px;
+  border-color: #e4c94f;
+  padding: 9px 12px;
+  color: #242938;
+  background: #fff9dc;
+}
+
+.egg-profile-notice strong {
+  flex: 0 0 auto;
+}
+
+.egg-profile-notice span {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+
+.egg-profile-notice a {
+  flex: 0 0 auto;
+  color: #5f45c8;
+  font-size: 12px;
+  font-weight: 850;
 }
 
 .egg-profile-card {
@@ -2543,11 +2572,12 @@ button:disabled {
   grid-template-columns: 76px minmax(0, 1fr);
   align-items: center;
   gap: 16px;
-  min-height: 98px;
+  min-height: 116px;
   border: 1px solid #e1e6ee;
   border-radius: 8px;
-  padding: 14px;
-  background: #f8fafc;
+  padding: 20px;
+  background: #ffffff;
+  box-shadow: 0 1px 4px rgba(20, 34, 52, 0.05);
 }
 
 .egg-profile-avatar {
@@ -2606,6 +2636,21 @@ button:disabled {
 
 .egg-profile-actions .primary-button {
   background: #2f66d8;
+}
+
+.egg-profile-actions .secondary-button {
+  border-color: #d4d7e2;
+  color: #1f2430;
+  background: #f5f7fb;
+}
+
+:root[data-theme="dark"] .egg-profile-card {
+  background: #f8fafc;
+}
+
+:root[data-theme="dark"] .egg-profile-notice {
+  color: #242938;
+  background: #fff9dc;
 }
 
 .clean-profile {
@@ -2786,9 +2831,10 @@ button:disabled {
 .egg-world-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-rows: auto auto;
   align-items: center;
-  gap: 12px;
-  min-height: 92px;
+  gap: 8px 12px;
+  min-height: 96px;
   border: 1px solid #e6eaf0;
   border-radius: 12px;
   padding: 12px;
@@ -2816,9 +2862,13 @@ button:disabled {
 .world-foot {
   grid-template-columns: auto;
   justify-items: end;
+  grid-column: 2 / 3;
+  grid-row: 1 / 3;
 }
 
 .egg-world-card .join-button {
+  grid-column: 3 / 4;
+  grid-row: 1 / 3;
   width: 72px;
   min-height: 38px;
   background: #2f66d8;

@@ -130,7 +130,7 @@ const defaultTarget = {
 const WORLD_CACHE_KEY = 'luma:world-feed:v1';
 const PRESENCE_CACHE_KEY = 'luma:presence-feed:v1';
 const ADMIN_KEY_STORAGE_KEY = 'luma:admin-key:v1';
-const THEME_STORAGE_KEY = 'luma:theme:v1';
+const THEME_STORAGE_KEY = 'luma:theme:v2';
 const WORLD_CACHE_MS = 45_000;
 const PRESENCE_CACHE_MS = 120_000;
 const nativeShellApiBase =
@@ -345,7 +345,7 @@ function App() {
     } catch {
       // Ignore storage failures.
     }
-    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return 'light';
   });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -1332,8 +1332,8 @@ function App() {
             </section>
 
             <section className="egg-profile-actions">
-              <button className="primary-button" type="button" onClick={startXboxLogin} disabled={busyAction === 'xbox-login'}>
-                {busyAction === 'xbox-login' ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
+              <button className="primary-button" type="button" onClick={() => openAuth('login')}>
+                <KeyRound size={16} />
                 로그인
               </button>
               <button className="secondary-button" type="button" onClick={() => setTab('servers')}>
@@ -1341,7 +1341,7 @@ function App() {
               </button>
             </section>
 
-            <section className="install-panel">
+            <section className="install-panel profile-install-panel">
               <div className="install-copy">
                 <span className="eyebrow">{isDesktopApp ? 'APP MODE' : 'AUTO DOWNLOAD'}</span>
                 <h2>{isDesktopApp ? 'PC 앱 설정' : `${preferredDownload.platform}용 파일 받기`}</h2>
@@ -1391,7 +1391,7 @@ function App() {
               </div>
             </section>
 
-            <section className="profile-layout clean-profile">
+            <section className="profile-layout clean-profile legacy-profile-panels">
               <span id="release-builds" className="anchor-target" aria-hidden="true" />
               <article className="profile-panel app-settings-panel">
                 <div className="panel-heading">

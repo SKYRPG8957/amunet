@@ -444,6 +444,7 @@ function App() {
     });
   }, [countryMode, query, sort, sourceMode, worlds.value]);
 
+  const selectedWorld = useMemo(() => filteredWorlds[0] || worlds.value[0] || null, [filteredWorlds, worlds.value]);
   const countryCounts = useMemo(() => {
     const counts = new Map<CountryMode, number>();
     for (const world of worlds.value) {
@@ -967,147 +968,184 @@ function App() {
       <main className="shell">
         {tab === 'servers' ? (
           <>
-            <section className="intro server-hero">
-              <div className="intro-title">
-                <Gamepad2 size={18} />
-                <div>
-                  <strong>Bedrock 월드 탐색</strong>
-                  <span>Eggnet 라이브 피드와 Luma 세션을 한 화면에서 정리합니다.</span>
-                  <span>참가 버튼은 Minecraft activity handle 링크를 열어 친구 탭 참가 흐름에 맞춥니다.</span>
+            <section className="arcade-directory">
+              <aside className="directory-filter">
+                <label className="search-box">
+                  <Search size={17} />
+                  <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="월드, 호스트, 태그 검색" />
+                </label>
+                <select value={countryMode} onChange={(event) => setCountryMode(event.target.value as CountryMode)} aria-label="국가">
+                  {COUNTRY_OPTIONS.map((country) => (
+                    <option key={country.id} value={country.id}>
+                      {country.label}
+                    </option>
+                  ))}
+                </select>
+                <select value={sourceMode} onChange={(event) => setSourceMode(event.target.value as SourceMode)} aria-label="소스">
+                  <option value="all">전체 피드</option>
+                  <option value="eggnet">Eggnet 피드</option>
+                  <option value="luma">Luma 피드</option>
+                </select>
+                <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} aria-label="정렬">
+                  <option value="recommended">추천순</option>
+                  <option value="latest">최근 갱신</option>
+                  <option value="players">인원 많은순</option>
+                  <option value="korean">한국어 우선</option>
+                </select>
+                <div className="quick-regions">
+                  {COUNTRY_OPTIONS.filter((country) => country.id !== 'all').map((country) => (
+                    <button key={country.id} type="button" onClick={() => setCountryMode(country.id)}>
+                      {country.label}
+                      <span>{countryCounts.get(country.id) || 0}</span>
+                    </button>
+                  ))}
                 </div>
-              </div>
-              <div className="hero-metrics">
-                <span>
-                  <strong>{worlds.value.length.toLocaleString()}</strong>
-                  월드
-                </span>
-                <span>
-                  <strong>{visiblePlayers.toLocaleString()}</strong>
-                  접속자
-                </span>
-                <span>
-                  <strong>{activeCountryCount}</strong>
-                  국가권
-                </span>
-              </div>
-            </section>
+              </aside>
 
-            <section className="provider-strip" aria-label="연결된 월드 제공자">
-              {providers.map((provider) => (
-                <div className={provider.ok ? '' : 'error'} key={provider.id}>
-                  <strong>{providerLabel(provider.name)}</strong>
+              <section className="directory-main">
+                <div className="directory-topbar">
+                  <div>
+                    <span>SERVER DIRECTORY</span>
+                    <h1>Bedrock 멀티플레이 월드</h1>
+                  </div>
+                  <div className="directory-actions">
+                    <button className="secondary-button" type="button" onClick={() => loadWorlds(true)} disabled={worlds.loading}>
+                      {worlds.loading ? <Loader2 className="spin" size={16} /> : <RefreshCw size={16} />}
+                      새로고침
+                    </button>
+                    <button className="secondary-button" type="button" onClick={randomJoin}>
+                      <Dice5 size={16} />
+                      랜덤 참가
+                    </button>
+                    <button className="primary-button" type="button" onClick={() => setTab('profile')}>
+                      <Download size={16} />
+                      앱 받기
+                    </button>
+                  </div>
+                </div>
+
+                <div className="directory-stats">
                   <span>
-                    {provider.requiresLogin
-                      ? '로그인 필요'
-                      : `${provider.count}개${provider.mcbeOnlineCount ? ` · MCBE ${provider.mcbeOnlineCount}명` : ''}`}
+                    <strong>{filteredWorlds.length.toLocaleString()}</strong>
+                    표시 월드
+                  </span>
+                  <span>
+                    <strong>{openWorlds.toLocaleString()}</strong>
+                    참가 가능
+                  </span>
+                  <span>
+                    <strong>{visiblePlayers.toLocaleString()}</strong>
+                    온라인
+                  </span>
+                  <span>
+                    <strong>{activeCountryCount}</strong>
+                    국가권
                   </span>
                 </div>
-              ))}
-            </section>
 
-            {!xbox.signedIn ? (
-              <section className="login-banner">
-                <strong>Luma 계정에서 Xbox를 연동하세요.</strong>
-                <span>
-                  {capabilities.supabaseEdge
-                    ? '클라우드 백엔드로 공개 피드와 참가 URI를 제공합니다.'
-                    : '공개 월드 탐색은 바로 가능하고, 계정 연동 후 개인화 기능을 사용할 수 있습니다.'}
-                </span>
-                <a href="https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow" target="_blank" rel="noreferrer">
-                  Xbox 연동 방식
-                  <ExternalLink size={14} />
-                </a>
-              </section>
-            ) : null}
-
-            <div className="search-row">
-              <label className="search-box">
-                <Search size={18} />
-                <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="서버 검색..." />
-              </label>
-              <select value={sort} onChange={(event) => setSort(event.target.value as SortMode)} aria-label="정렬">
-                <option value="recommended">추천</option>
-                <option value="latest">최신</option>
-                <option value="players">인원순</option>
-                <option value="korean">한국어 우선</option>
-              </select>
-              <select value={sourceMode} onChange={(event) => setSourceMode(event.target.value as SourceMode)} aria-label="소스">
-                <option value="all">전체 소스</option>
-                <option value="eggnet">Eggnet</option>
-                <option value="luma">Luma</option>
-              </select>
-              <select value={countryMode} onChange={(event) => setCountryMode(event.target.value as CountryMode)} aria-label="국가">
-                {COUNTRY_OPTIONS.map((country) => (
-                  <option key={country.id} value={country.id}>
-                    {country.label}
-                    {country.id !== 'all' && countryCounts.get(country.id) ? ` ${countryCounts.get(country.id)}개` : ''}
-                  </option>
-                ))}
-              </select>
-              <button className="icon-button" type="button" onClick={() => loadWorlds(false)} disabled={worlds.loading}>
-                {worlds.loading ? <Loader2 className="spin" size={17} /> : <RefreshCw size={17} />}
-              </button>
-              <button className="icon-button" type="button" onClick={randomJoin}>
-                <Dice5 size={17} />
-              </button>
-              <button className="icon-button" type="button" aria-label="필터">
-                <Filter size={17} />
-              </button>
-            </div>
-
-            {worlds.error ? <div className="notice danger">{worlds.error}</div> : null}
-
-            <section className="server-list">
-              {filteredWorlds.map((world) => (
-                <article className="server-card" key={world.handleId}>
-                  <div className="server-avatar">
-                    {world.avatarTinyBase64 ? (
-                      <img alt="" src={`data:image/webp;base64,${world.avatarTinyBase64}`} />
-                    ) : world.avatarUrl ? (
-                      <img alt="" src={world.avatarUrl} />
-                    ) : (
-                      <Gamepad2 size={22} />
-                    )}
-                  </div>
-
-                  <div className="server-info">
-                    <h2>{world.title || 'Minecraft World'}</h2>
-                    <p>
-                      <Users size={13} />
-                      {world.ownerGamertag || world.hostName || world.ownerXuid || 'Unknown'}
-                    </p>
-                    <div className="chips">
-                      <span>{world.worldType || '월드'}</span>
-                      <span>{world.version || '?'}</span>
-                      <span>{relativeTime(world.updatedAtMs)}</span>
-                      <span>{countryLabel(countryForWorld(world))}</span>
-                      <span>{sourceLabel(world.source)}</span>
+                <div className="provider-strip compact-providers" aria-label="연결된 월드 제공자">
+                  {providers.map((provider) => (
+                    <div className={provider.ok ? '' : 'error'} key={provider.id}>
+                      <strong>{providerLabel(provider.name)}</strong>
+                      <span>{provider.requiresLogin ? '연동 필요' : `${provider.count}개`}</span>
                     </div>
-                  </div>
-
-                  <div className="server-side">
-                    <span className="players">
-                      <Users size={13} />
-                      {world.members}/{world.maxMembers || '?'}
-                    </span>
-                    <button className="join-button" type="button" onClick={() => setJoinTarget(world)}>
-                      참가
-                    </button>
-                    <span className="bars" aria-label="connection">
-                      <i />
-                      <i />
-                      <i className={world.closed ? 'muted' : ''} />
-                    </span>
-                  </div>
-                </article>
-              ))}
-
-              {!worlds.loading && filteredWorlds.length === 0 ? (
-                <div className="empty-state">
-                  <strong>검색 결과가 없습니다.</strong>
-                  <span>다른 월드명, 게이머태그, 언어로 검색해 보세요.</span>
+                  ))}
                 </div>
-              ) : null}
+
+                {worlds.error ? <div className="notice danger">{worlds.error}</div> : null}
+
+                <section className="eggnet-card-grid">
+                  {filteredWorlds.map((world) => (
+                    <article className="egg-world-card" key={world.handleId}>
+                      <div className="world-head">
+                        <div className="server-avatar">
+                          {world.avatarTinyBase64 ? (
+                            <img alt="" src={`data:image/webp;base64,${world.avatarTinyBase64}`} />
+                          ) : world.avatarUrl ? (
+                            <img alt="" src={world.avatarUrl} />
+                          ) : (
+                            <Gamepad2 size={21} />
+                          )}
+                        </div>
+                        <div>
+                          <h2>{world.title || 'Minecraft World'}</h2>
+                          <p>{world.ownerGamertag || world.hostName || 'Unknown host'}</p>
+                        </div>
+                      </div>
+                      <div className="world-tags">
+                        <span>{countryLabel(countryForWorld(world))}</span>
+                        <span>{world.version || '?'}</span>
+                        <span>{sourceLabel(world.source)}</span>
+                      </div>
+                      <div className="world-foot">
+                        <span className={world.closed ? 'world-state closed' : 'world-state'}>
+                          <Wifi size={13} />
+                          {world.closed ? '닫힘' : '온라인'}
+                        </span>
+                        <span>{relativeTime(world.updatedAtMs)}</span>
+                        <strong>
+                          {world.members}/{world.maxMembers || '?'}
+                        </strong>
+                      </div>
+                      <button className="join-button" type="button" onClick={() => setJoinTarget(world)}>
+                        참가
+                      </button>
+                    </article>
+                  ))}
+
+                  {!worlds.loading && filteredWorlds.length === 0 ? (
+                    <div className="empty-state">
+                      <strong>검색 결과가 없습니다.</strong>
+                      <span>지역이나 피드 필터를 바꿔보세요.</span>
+                    </div>
+                  ) : null}
+                </section>
+              </section>
+
+              <aside className="directory-detail">
+                {selectedWorld ? (
+                  <>
+                    <div className="detail-preview">
+                      <span className="brand-mark" />
+                    </div>
+                    <span className="eyebrow">{countryLabel(countryForWorld(selectedWorld)).toUpperCase()} REGION</span>
+                    <h2>{selectedWorld.title || 'Minecraft World'}</h2>
+                    <p>{selectedWorld.ownerGamertag || selectedWorld.hostName || selectedWorld.ownerXuid}</p>
+                    <div className="detail-grid">
+                      <span>
+                        상태
+                        <strong>{selectedWorld.closed ? '닫힘' : '온라인'}</strong>
+                      </span>
+                      <span>
+                        버전
+                        <strong>{selectedWorld.version || '?'}</strong>
+                      </span>
+                      <span>
+                        플레이어
+                        <strong>
+                          {selectedWorld.members}/{selectedWorld.maxMembers || '?'}
+                        </strong>
+                      </span>
+                      <span>
+                        피드
+                        <strong>{sourceLabel(selectedWorld.source)}</strong>
+                      </span>
+                    </div>
+                    <button className="primary-button full" type="button" onClick={() => setJoinTarget(selectedWorld)}>
+                      <Play size={16} />
+                      Minecraft로 참가
+                    </button>
+                    <button className="secondary-button full" type="button" onClick={() => copyText(selectedWorld.uri, '참가 링크 복사 완료')}>
+                      <Copy size={16} />
+                      참가 링크 복사
+                    </button>
+                  </>
+                ) : (
+                  <div className="empty-state">
+                    <strong>월드를 선택하세요.</strong>
+                  </div>
+                )}
+              </aside>
             </section>
           </>
         ) : null}

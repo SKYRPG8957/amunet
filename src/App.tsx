@@ -156,10 +156,10 @@ const defaultCapabilities: RuntimeCapabilities = {
   supabaseCache: false,
   supabaseEdge: false,
   static: false,
-  bridge: true,
-  proxyPass: true,
-  xboxLogin: true,
-  bedrockPing: true,
+  bridge: false,
+  proxyPass: false,
+  xboxLogin: false,
+  bedrockPing: false,
 };
 
 const defaultTarget = {
@@ -233,14 +233,28 @@ function prefersLocalApi(url: string) {
   return /^\/api\/(health|bridge|proxypass|xbox|status\/bedrock|worlds\/discover|join\/simple)/.test(url);
 }
 
+function localOnlyApi(url: string) {
+  return /^\/api\/(bridge|proxypass|xbox|status\/bedrock|worlds\/discover)/.test(url);
+}
+
+function localOnlyError(url: string, reason: string) {
+  if (url.startsWith('/api/proxypass')) {
+    return `PC 앱 브리지가 구버전이거나 꺼져 있습니다. 최신 Windows 앱을 설치한 뒤 앱을 완전히 다시 열어주세요. (${reason})`;
+  }
+  return `PC 앱 브리지에서만 실행할 수 있는 기능입니다. 최신 앱을 실행해 주세요. (${reason})`;
+}
+
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
   const headers = {
     Accept: 'application/json',
     ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
     ...(init?.headers || {}),
   };
+  const isLocalOnly = !url.startsWith('http') && localOnlyApi(url);
   const endpoints = url.startsWith('http')
     ? [url]
+    : isLocalOnly
+      ? [`${LOCAL_API_BASE}${url}`]
     : [
         ...(prefersLocalApi(url) && `${LOCAL_API_BASE}${url}` !== `${apiBase}${url}` ? [`${LOCAL_API_BASE}${url}`] : []),
         apiBase ? `${apiBase}${url}` : url,
@@ -256,12 +270,16 @@ async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
       const payload = await response.json().catch(() => ({}));
 
       if (!response.ok || payload.ok === false) {
+        if (isLocalOnly && endpoint.startsWith(LOCAL_API_BASE)) {
+          throw new Error(localOnlyError(url, response.status === 404 ? '앱 API 업데이트 필요' : payload.error || response.statusText));
+        }
         throw new Error(payload.error || response.statusText);
       }
 
       return payload as T;
     } catch (error) {
       lastError = error;
+      if (isLocalOnly) break;
       if (!endpoint.startsWith(LOCAL_API_BASE)) break;
     }
   }
@@ -911,7 +929,7 @@ function App() {
       const proxyTarget = worldProxyTarget(world);
       if (proxyTarget) {
         if (!capabilities.proxyPass) {
-          setToast('Eggnet 월드 참가는 Windows 앱의 ProxyPass 브리지가 필요합니다.');
+          setToast('Eggnet 월드 참가는 최신 Windows 앱 브리지가 필요합니다. 앱을 업데이트하고 다시 실행해 주세요.');
           setTab('profile');
           return;
         }

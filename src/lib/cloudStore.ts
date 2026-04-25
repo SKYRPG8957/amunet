@@ -371,6 +371,10 @@ export async function loadTrackedXuids(): Promise<TrackedXuid[]> {
     return [];
   }
 
+  if (user.id.startsWith('guest-')) {
+    return readLocalTracked();
+  }
+
   const { data, error } = await supabase
     .from('tracked_xuids')
     .select('id,xuid,gamertag,note,created_at')

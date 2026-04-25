@@ -81,4 +81,6 @@ await replaceInFile('index.html', [
   [/content="[^"]*Minecraft Bedrock[^"]*"/, 'content="Luma Arcade - Minecraft Bedrock 멀티플레이 월드 탐색과 커뮤니티"'],
 ]);
 
+await fs.writeFile('src/version.ts', `export const APP_VERSION = '${version}';\n`);
+
 console.log(`Synced ${PRODUCT_NAME} ${version}`);

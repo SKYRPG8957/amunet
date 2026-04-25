@@ -82,6 +82,31 @@ function parseJsonNote(note: unknown): JsonMap {
   }
 }
 
+function collectConnections(...sources: unknown[]) {
+  return sources
+    .flatMap((source) => {
+      const value = source as JsonMap | unknown[] | null | undefined;
+      if (!value) return [];
+      if (Array.isArray(value)) return value;
+      return ((value.SupportedConnections || value.supportedConnections || value.connections || []) as unknown[]);
+    })
+    .filter(Boolean) as JsonMap[];
+}
+
+function pickIpConnection(...sources: unknown[]) {
+  const match = collectConnections(...sources).find((connection) => {
+    const host = String(connection.HostIpAddress || connection.host || '').trim();
+    const port = Number(connection.HostPort || connection.port || 0);
+    return host && port > 0;
+  });
+
+  if (!match) return null;
+  return {
+    host: String(match.HostIpAddress || match.host).trim(),
+    port: Number(match.HostPort || match.port),
+  };
+}
+
 function buildJoinUri(handleId: string) {
   return `minecraft://activityHandleJoin/?handle=${encodeURIComponent(handleId)}`;
 }
@@ -110,6 +135,7 @@ function normalizeEggnetWorld(entry: JsonMap) {
   const title = cleanMinecraftText(entry.title || handle.worldName || 'Minecraft World');
   const ownerGamertag = String(entry.ownerGamertag || ((note.host || {}) as JsonMap).gamertag || '');
   const hostName = String(entry.hostName || handle.hostName || ownerGamertag || '');
+  const ipConnection = pickIpConnection(handle, entry, ((world.raw || {}) as JsonMap).properties ? ((world.raw || {}) as JsonMap).properties : null);
 
   return {
     id: String(entry.serverId || handleId),
@@ -117,6 +143,7 @@ function normalizeEggnetWorld(entry: JsonMap) {
     handleId,
     title,
     hostName,
+    ...(ipConnection ? { host: ipConnection.host, port: ipConnection.port } : {}),
     ownerXuid: String(entry.ownerXuid || handle.ownerId || handle.ownerXuid || ((note.host || {}) as JsonMap).xuid || ''),
     ownerGamertag,
     source: `eggnet:${String(entry.source || 'feed')}`,
@@ -165,6 +192,7 @@ function rowToWorld(row: JsonMap) {
     handleId,
     title: String(row.title || raw.title || 'Minecraft World'),
     hostName: String(raw.hostName || row.owner_gamertag || ''),
+    ...(raw.host && raw.port ? { host: String(raw.host), port: Number(raw.port) } : {}),
     ownerXuid: String(row.owner_xuid || raw.ownerXuid || ''),
     ownerGamertag: String(row.owner_gamertag || raw.ownerGamertag || ''),
     source: String(row.source || raw.source || 'supabase'),
@@ -184,6 +212,36 @@ function rowToWorld(row: JsonMap) {
     updatedAtMs: Number(raw.updatedAtMs || new Date(String(row.updated_at || Date.now())).getTime()),
     uri: buildJoinUri(handleId),
   };
+}
+
+function featuredTargetWorlds(now = Date.now()) {
+  return featuredTargets.map((target) => ({
+    id: `featured:${target.id}`,
+    serverId: '',
+    handleId: `featured:${target.id}`,
+    title: target.name,
+    hostName: target.host,
+    host: target.host,
+    port: target.port,
+    ownerXuid: '',
+    ownerGamertag: target.name,
+    source: 'luma:featured',
+    language: target.language,
+    languages: [target.language],
+    avatarTinyBase64: '',
+    avatarUrl: '',
+    worldType: target.category,
+    version: '',
+    protocol: 944,
+    members: 0,
+    maxMembers: 0,
+    joinRestriction: 'open',
+    visibility: 'public',
+    nethernetId: '',
+    closed: false,
+    updatedAtMs: now,
+    uri: `minecraft://?addExternalServer=${encodeURIComponent(`${target.name}|${target.host}:${target.port}`)}`,
+  }));
 }
 
 async function readCachedWorlds() {
@@ -271,14 +329,25 @@ async function worldsLive(req: Request) {
     waitUntil(refreshEggnetFeed().catch((error) => console.error('background refresh failed', error)));
   }
 
+  const featuredWorlds = featuredTargetWorlds();
+  const mergedWorlds = [...featuredWorlds, ...worlds];
+
   return json({
     ok: true,
     source: 'supabase_edge',
     mode: 'unified',
     cache,
-    count: worlds.length,
+    count: mergedWorlds.length,
     fetchedAtMs: Date.now(),
     providers: [
+      {
+        id: 'luma-featured',
+        name: 'Luma Featured',
+        ok: true,
+        count: featuredWorlds.length,
+        error: null,
+        requiresLogin: false,
+      },
       {
         id: 'eggnet',
         name: 'Eggnet',
@@ -296,7 +365,7 @@ async function worldsLive(req: Request) {
         requiresLogin: true,
       },
     ],
-    worlds,
+    worlds: mergedWorlds,
   });
 }
 

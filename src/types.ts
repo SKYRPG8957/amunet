@@ -54,6 +54,8 @@ export type ActivityWorld = {
   handleId: string;
   title: string;
   hostName: string;
+  host?: string;
+  port?: number;
   ownerXuid: string;
   ownerGamertag?: string;
   source?: string;

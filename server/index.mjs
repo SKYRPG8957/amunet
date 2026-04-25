@@ -883,6 +883,31 @@ function parseJsonNote(note) {
   }
 }
 
+function collectConnections(...sources) {
+  return sources
+    .flatMap((source) => {
+      if (!source) return [];
+      if (Array.isArray(source)) return source;
+      return source.SupportedConnections || source.supportedConnections || source.connections || [];
+    })
+    .filter(Boolean);
+}
+
+function pickIpConnection(...sources) {
+  const connections = collectConnections(...sources);
+  const match = connections.find((connection) => {
+    const host = String(connection.HostIpAddress || connection.host || '').trim();
+    const port = Number(connection.HostPort || connection.port || 0);
+    return host && port > 0;
+  });
+
+  if (!match) return null;
+  return {
+    host: String(match.HostIpAddress || match.host).trim(),
+    port: Number(match.HostPort || match.port),
+  };
+}
+
 function buildJoinUri(handleId) {
   return `minecraft://activityHandleJoin/?handle=${encodeURIComponent(handleId)}`;
 }
@@ -945,6 +970,13 @@ function normalizePublicWorld(entry) {
 
   const languageSchema = entry?.languageSchema || {};
   const title = cleanMinecraftText(entry?.title || handle.worldName || 'Minecraft World');
+  const ipConnection = pickIpConnection(
+    handle,
+    entry,
+    note?.world?.handle,
+    note?.world?.raw?.properties?.custom,
+    note?.raw?.properties?.custom,
+  );
   const ownerXuid = String(entry?.ownerXuid || handle.ownerId || handle.ownerXuid || note?.host?.xuid || '');
   const ownerGamertag = String(entry?.ownerGamertag || note?.host?.gamertag || '');
   const hostName = String(entry?.hostName || handle.hostName || ownerGamertag || '');
@@ -970,6 +1002,12 @@ function normalizePublicWorld(entry) {
     handleId,
     title,
     hostName,
+    ...(ipConnection
+      ? {
+          host: ipConnection.host,
+          port: ipConnection.port,
+        }
+      : {}),
     ownerXuid,
     ownerGamertag,
     source: `eggnet:${String(entry?.source || 'feed')}`,
@@ -1330,6 +1368,12 @@ function normalizeXboxSessionWorld(server, profileMap) {
     handleId,
     title: server.worldName || 'Minecraft World',
     hostName: server.hostName || hostProfile.gamertag || '',
+    ...(server.ipConn?.host && server.ipConn?.port
+      ? {
+          host: server.ipConn.host,
+          port: Number(server.ipConn.port),
+        }
+      : {}),
     ownerXuid: server.hostXuid || server.ownerXuid || '',
     ownerGamertag: hostProfile.gamertag || server.hostName || '',
     source: 'amunet:xbox-sessiondirectory',
@@ -1349,6 +1393,36 @@ function normalizeXboxSessionWorld(server, profileMap) {
     updatedAtMs: Date.now(),
     uri: buildJoinUri(handleId),
   };
+}
+
+function featuredTargetWorlds(now = Date.now()) {
+  return featuredTargets.map((target) => ({
+    id: `featured:${target.id}`,
+    serverId: '',
+    handleId: `featured:${target.id}`,
+    title: target.name,
+    hostName: target.host,
+    host: target.host,
+    port: target.port,
+    ownerXuid: '',
+    ownerGamertag: target.name,
+    source: 'luma:featured',
+    language: target.language,
+    languages: [target.language],
+    avatarTinyBase64: '',
+    avatarUrl: '',
+    worldType: target.category,
+    version: '',
+    protocol: bridgeProtocol,
+    members: 0,
+    maxMembers: 0,
+    joinRestriction: 'open',
+    visibility: 'public',
+    nethernetId: '',
+    closed: false,
+    updatedAtMs: now,
+    uri: `minecraft://?addExternalServer=${encodeURIComponent(`${target.name}|${target.host}:${target.port}`)}`,
+  }));
 }
 
 async function discoverXboxSessionWorlds({ force = false, limit = 250 } = {}) {
@@ -1497,6 +1571,22 @@ async function fetchUnifiedWorlds({ force = false, includeXbox = true, xboxLimit
 
   const providers = [];
   const feeds = [];
+
+  const lumaFeatured = {
+    ok: true,
+    source: 'luma_featured',
+    count: featuredTargets.length,
+    worlds: featuredTargetWorlds(now),
+  };
+  providers.push({
+    id: 'luma-featured',
+    name: 'Luma Featured',
+    ok: true,
+    count: lumaFeatured.count,
+    error: null,
+    requiresLogin: false,
+  });
+  feeds.push(lumaFeatured);
 
   const eggnet = await fetchPublicFeed({ force }).catch((error) => ({
     ok: false,

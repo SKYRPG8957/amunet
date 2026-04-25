@@ -53,12 +53,12 @@ import {
   signInOAuthCloud,
   signInPasswordCloud,
   signOutCloud,
-  signUpCloud,
   type CommunityMessage,
   type CloudUser,
   type OAuthProvider,
 } from './lib/cloudStore';
 import { supabaseAnonKey, supabaseUrl } from './lib/supabase';
+import { APP_VERSION } from './version';
 import './styles.css';
 
 type Tab = 'servers' | 'community' | 'profile' | 'admin';
@@ -72,6 +72,25 @@ type OAuthButton = {
   short: string;
 };
 type OAuthAvailability = Record<OAuthProvider, boolean>;
+type ReleaseInfo = {
+  loading: boolean;
+  error: string | null;
+  currentVersion: string;
+  latestVersion: string | null;
+  latestUrl: string;
+  windowsUrl: string;
+  androidUrl: string;
+  updateAvailable: boolean;
+  currentBuildPending: boolean;
+};
+type BridgeTargetInput = {
+  id?: string;
+  name: string;
+  host: string;
+  port: number;
+  protocol?: number;
+  version?: string;
+};
 type ApiState<T> = {
   loading: boolean;
   error: string | null;
@@ -134,11 +153,14 @@ const ADMIN_KEY_STORAGE_KEY = 'luma:admin-key:v1';
 const THEME_STORAGE_KEY = 'luma:theme:v2';
 const WORLD_CACHE_MS = 45_000;
 const PRESENCE_CACHE_MS = 120_000;
-const nativeShellApiBase =
+const LOCAL_API_BASE = 'http://127.0.0.1:8787';
+const isNativeShellRuntime =
   typeof window !== 'undefined' && (window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__
-    ? 'http://127.0.0.1:8787'
-    : '';
-const apiBase = (nativeShellApiBase || import.meta.env.VITE_STATUS_API_URL?.trim() || '').replace(/\/$/, '');
+    ? true
+    : typeof window !== 'undefined' && Boolean((window as typeof window & { __TAURI__?: unknown }).__TAURI__);
+const nativeShellApiBase = isNativeShellRuntime ? LOCAL_API_BASE : '';
+const configuredApiBase = (import.meta.env.VITE_STATUS_API_URL?.trim() || '').replace(/\/$/, '');
+const apiBase = (nativeShellApiBase || configuredApiBase).replace(/\/$/, '');
 const defaultReleaseAssets = {
   windows: 'https://github.com/SKYRPG8957/amunet/releases/latest/download/luma-arcade-windows-setup.exe',
   android: 'https://github.com/SKYRPG8957/amunet/releases/latest/download/luma-arcade-android-debug.apk',
@@ -178,23 +200,74 @@ function messageFrom(error: unknown) {
   return error instanceof Error ? error.message : '요청 처리 중 오류가 발생했습니다.';
 }
 
-async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
-  const endpoint = url.startsWith('http') ? url : `${apiBase}${url}`;
-  const response = await fetch(endpoint, {
+function withTimeout(init?: RequestInit, timeoutMs = 2500): RequestInit {
+  if (init?.signal) return init;
+  return {
     ...init,
-    headers: {
-      Accept: 'application/json',
-      ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
-      ...(init?.headers || {}),
-    },
-  });
-  const payload = await response.json().catch(() => ({}));
+    signal: AbortSignal.timeout(timeoutMs),
+  };
+}
 
-  if (!response.ok || payload.ok === false) {
-    throw new Error(payload.error || response.statusText);
+function prefersLocalApi(url: string) {
+  return /^\/api\/(health|bridge|xbox|status\/bedrock|worlds\/discover|join\/simple)/.test(url);
+}
+
+async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
+  const headers = {
+    Accept: 'application/json',
+    ...(init?.body ? { 'Content-Type': 'application/json' } : {}),
+    ...(init?.headers || {}),
+  };
+  const endpoints = url.startsWith('http')
+    ? [url]
+    : [
+        ...(prefersLocalApi(url) && `${LOCAL_API_BASE}${url}` !== `${apiBase}${url}` ? [`${LOCAL_API_BASE}${url}`] : []),
+        apiBase ? `${apiBase}${url}` : url,
+      ];
+  let lastError: unknown = null;
+
+  for (const endpoint of endpoints) {
+    try {
+      const response = await fetch(endpoint, {
+        ...withTimeout(init, endpoint.startsWith(LOCAL_API_BASE) ? 1800 : 10_000),
+        headers,
+      });
+      const payload = await response.json().catch(() => ({}));
+
+      if (!response.ok || payload.ok === false) {
+        throw new Error(payload.error || response.statusText);
+      }
+
+      return payload as T;
+    } catch (error) {
+      lastError = error;
+      if (!endpoint.startsWith(LOCAL_API_BASE)) break;
+    }
   }
 
-  return payload as T;
+  throw lastError instanceof Error ? lastError : new Error('요청 처리 중 오류가 발생했습니다.');
+}
+
+function parseVersion(version: string) {
+  return version
+    .replace(/^v/i, '')
+    .split(/[+-]/)[0]
+    .split('.')
+    .map((part) => Number(part) || 0);
+}
+
+function compareVersions(a: string, b: string) {
+  const left = parseVersion(a);
+  const right = parseVersion(b);
+  for (let index = 0; index < 3; index += 1) {
+    const diff = (left[index] || 0) - (right[index] || 0);
+    if (diff !== 0) return diff;
+  }
+  return 0;
+}
+
+function assetUrl(assets: Array<{ name: string; browser_download_url: string }>, pattern: RegExp, fallback: string) {
+  return assets.find((asset) => pattern.test(asset.name))?.browser_download_url || fallback;
 }
 
 function readCachedPayload<T>(key: string): { savedAtMs: number; payload: T } | null {
@@ -292,6 +365,18 @@ function platformDownload() {
   };
 }
 
+function worldBridgeTarget(world: ActivityWorld): BridgeTargetInput | null {
+  if (!world.host || !world.port) return null;
+  return {
+    id: world.id || world.handleId || `${world.host}:${world.port}`,
+    name: world.title || world.hostName || world.host,
+    host: world.host,
+    port: world.port,
+    protocol: world.protocol || undefined,
+    version: world.version || undefined,
+  };
+}
+
 function App() {
   const [adminMode] = useState(() => isAdminRoute());
   const [tab, setTab] = useState<Tab>(() => (isAdminRoute() ? 'admin' : 'servers'));
@@ -339,6 +424,17 @@ function App() {
   const [oauthChecked, setOauthChecked] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>('login');
   const [authOpen, setAuthOpen] = useState(false);
+  const [release, setRelease] = useState<ReleaseInfo>({
+    loading: true,
+    error: null,
+    currentVersion: APP_VERSION,
+    latestVersion: null,
+    latestUrl: downloadLinks.releases,
+    windowsUrl: downloadLinks.windows,
+    androidUrl: downloadLinks.android,
+    updateAvailable: false,
+    currentBuildPending: false,
+  });
   const [theme, setTheme] = useState<'light' | 'dark'>(() => {
     try {
       const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
@@ -365,6 +461,16 @@ function App() {
       return '';
     }
   });
+  const activeDownload = {
+    platform: preferredDownload.platform,
+    href: preferredDownload.platform === 'Android' ? release.androidUrl : release.windowsUrl,
+    label: preferredDownload.label,
+  };
+  const alternateDownload = {
+    platform: preferredDownload.platform === 'Android' ? 'Windows' : 'Android',
+    href: preferredDownload.platform === 'Android' ? release.windowsUrl : release.androidUrl,
+    label: preferredDownload.platform === 'Android' ? 'Windows 파일' : 'Android APK',
+  } as const;
 
   useEffect(() => {
     refreshHealth();
@@ -376,6 +482,7 @@ function App() {
     loadWorlds();
     loadChat();
     loadOAuthAvailability();
+    loadReleaseInfo();
     const id = adminMode ? window.setInterval(refreshBridge, 2200) : null;
     return () => {
       if (id) window.clearInterval(id);
@@ -467,6 +574,9 @@ function App() {
       const bKo = b.language === 'ko' ? 1 : 0;
       if (aKo !== bKo) return bKo - aKo;
       if (a.closed !== b.closed) return a.closed ? 1 : -1;
+      const aBridgeable = a.host && a.port ? 1 : 0;
+      const bBridgeable = b.host && b.port ? 1 : 0;
+      if (aBridgeable !== bBridgeable) return bBridgeable - aBridgeable;
       return b.members - a.members || b.updatedAtMs - a.updatedAtMs;
     });
   }, [countryMode, query, sort, sourceMode, worlds.value]);
@@ -571,6 +681,50 @@ function App() {
       setOauthEnabled(defaultOAuthAvailability);
     } finally {
       setOauthChecked(true);
+    }
+  }
+
+  async function loadReleaseInfo() {
+    setRelease((current) => ({ ...current, loading: true, error: null }));
+
+    try {
+      const response = await fetch('https://api.github.com/repos/SKYRPG8957/amunet/releases/latest', {
+        headers: { Accept: 'application/vnd.github+json' },
+        signal: AbortSignal.timeout(8000),
+      });
+      const payload = (await response.json().catch(() => ({}))) as {
+        tag_name?: string;
+        html_url?: string;
+        assets?: Array<{ name: string; browser_download_url: string }>;
+      };
+
+      if (!response.ok) {
+        throw new Error(`GitHub Release ${response.status}`);
+      }
+
+      const latestVersion = (payload.tag_name || '').replace(/^v/i, '') || null;
+      const assets = payload.assets || [];
+      const windowsUrl = assetUrl(assets, /windows.*(setup|installer).*\.exe$/i, downloadLinks.windows);
+      const androidUrl = assetUrl(assets, /android.*\.apk$/i, downloadLinks.android);
+      const versionDiff = latestVersion ? compareVersions(latestVersion, APP_VERSION) : 0;
+
+      setRelease({
+        loading: false,
+        error: null,
+        currentVersion: APP_VERSION,
+        latestVersion,
+        latestUrl: payload.html_url || downloadLinks.releases,
+        windowsUrl,
+        androidUrl,
+        updateAvailable: versionDiff > 0,
+        currentBuildPending: versionDiff < 0,
+      });
+    } catch (error) {
+      setRelease((current) => ({
+        ...current,
+        loading: false,
+        error: messageFrom(error),
+      }));
     }
   }
 
@@ -712,10 +866,24 @@ function App() {
     setBusyAction(`join:${world.handleId}`);
 
     try {
+      const bridgeTarget = worldBridgeTarget(world);
+      if (bridgeTarget) {
+        const payload = await requestJson<{ bridge: BridgeStatus }>('/api/bridge/start', {
+          method: 'POST',
+          headers: operatorHeaders(),
+          body: JSON.stringify(bridgeTarget),
+        });
+        setBridge(payload.bridge);
+        setToast(xbox.signedIn ? 'Minecraft 친구 탭에 Luma 월드를 띄우는 중입니다.' : 'Minecraft LAN 탭에 Luma 월드를 띄우는 중입니다.');
+        setJoinTarget(null);
+        setTab('profile');
+        return;
+      }
+
       const joinUri = world.uri || `minecraft://activityHandleJoin/?handle=${encodeURIComponent(world.handleId)}`;
       window.location.assign(joinUri);
       window.setTimeout(() => {
-        setToast('Minecraft가 열리지 않으면 PC/Android 앱에서 다시 시도하거나 URI 복사를 사용하세요.');
+        setToast('Minecraft가 열리지 않으면 설치 앱에서 Xbox 연동 후 다시 시도하세요.');
       }, 900);
     } catch (error) {
       setToast(messageFrom(error));
@@ -753,7 +921,7 @@ function App() {
       return;
     }
 
-    setJoinTarget(filteredWorlds[Math.floor(Math.random() * filteredWorlds.length)]);
+    await openJoinTarget(filteredWorlds[Math.floor(Math.random() * filteredWorlds.length)]);
   }
 
   async function startXboxLogin() {
@@ -794,18 +962,23 @@ function App() {
       return;
     }
 
-    if (password.length < 6) {
-      setToast('비밀번호는 6자 이상이어야 합니다.');
-      return;
-    }
-
     setBusyAction(`cloud-${authMode}`);
 
     try {
       if (authMode === 'signup') {
-        await signUpCloud(email, password, displayName);
-        setToast('회원가입 완료. 메일 확인이 켜져 있으면 인증 후 로그인됩니다.');
+        if (!email.trim()) {
+          setToast('이메일을 먼저 입력하세요.');
+          return;
+        }
+        await signInCloud(email);
+        setToast('인증 메일을 보냈습니다. 메일 링크를 눌러야 가입/로그인이 완료됩니다.');
+        setPassword('');
+        return;
       } else {
+        if (password.length < 6) {
+          setToast('비밀번호는 6자 이상이어야 합니다.');
+          return;
+        }
         await signInPasswordCloud(email, password);
         setToast('Luma 계정 로그인 완료');
       }
@@ -996,6 +1169,10 @@ function App() {
       setToast(`${platform} 다운로드 파일을 찾지 못했습니다.`);
       return;
     }
+    if (release.currentBuildPending) {
+      setToast(`v${release.currentVersion} 설치 파일 빌드가 아직 latest에 반영되지 않았습니다.`);
+      return;
+    }
     window.location.href = href;
   }
 
@@ -1098,7 +1275,7 @@ function App() {
                     <button
                       className="primary-button"
                       type="button"
-                      onClick={() => downloadFile(preferredDownload.href, preferredDownload.platform as 'Windows' | 'Android')}
+                      onClick={() => downloadFile(activeDownload.href, activeDownload.platform as 'Windows' | 'Android')}
                     >
                       <Download size={16} />
                       앱 받기
@@ -1239,7 +1416,7 @@ function App() {
                         <strong>{sourceLabel(selectedWorld.source)}</strong>
                       </span>
                     </div>
-                    <button className="primary-button full" type="button" onClick={() => setJoinTarget(selectedWorld)}>
+                    <button className="primary-button full" type="button" onClick={() => openJoinTarget(selectedWorld)}>
                       <Play size={16} />
                       Minecraft로 참가
                     </button>
@@ -1415,13 +1592,19 @@ function App() {
                     <span>이메일</span>
                     <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email@example.com" type="email" />
                   </label>
-                  <label className="field">
-                    <span>비밀번호</span>
-                    <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="6자 이상" type="password" minLength={6} />
-                  </label>
-                  <button className="primary-button full" type="submit" disabled={!email.trim() || password.length < 6 || busyAction === `cloud-${authMode}`}>
+                  {authMode === 'login' ? (
+                    <label className="field">
+                      <span>비밀번호</span>
+                      <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="6자 이상" type="password" minLength={6} />
+                    </label>
+                  ) : null}
+                  <button
+                    className="primary-button full"
+                    type="submit"
+                    disabled={!email.trim() || (authMode === 'login' && password.length < 6) || busyAction === `cloud-${authMode}`}
+                  >
                     {busyAction === `cloud-${authMode}` ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
-                    {authMode === 'signup' ? '계정 만들기' : '로그인'}
+                    {authMode === 'signup' ? '인증 메일 보내기' : '로그인'}
                   </button>
                 </form>
                 <div className="inline-auth-actions">
@@ -1444,26 +1627,40 @@ function App() {
                     ? '설치된 앱에서는 Minecraft 연결 준비 상태, Xbox 연동, 친구 프로필을 한 화면에서 관리합니다.'
                     : '접속 기기를 확인해서 Windows에서는 설치 파일, Android에서는 APK를 바로 내려받습니다.'}
                 </p>
+                <div className={release.currentBuildPending ? 'release-status pending' : release.updateAvailable ? 'release-status update' : 'release-status'}>
+                  <span>현재 v{release.currentVersion}</span>
+                  <span>
+                    {release.loading
+                      ? '릴리스 확인 중'
+                      : release.currentBuildPending
+                        ? `설치 파일 빌드 대기: latest v${release.latestVersion || '?'}`
+                        : release.updateAvailable
+                          ? `새 버전 v${release.latestVersion}`
+                          : `설치 파일 v${release.latestVersion || release.currentVersion}`}
+                  </span>
+                </div>
               </div>
               <div className="install-actions">
                 <button
                   className="download-button primary"
                   type="button"
-                  onClick={() => downloadFile(preferredDownload.href, preferredDownload.platform as 'Windows' | 'Android')}
+                  onClick={() => downloadFile(activeDownload.href, activeDownload.platform as 'Windows' | 'Android')}
                 >
                   <Download size={18} />
-                  {preferredDownload.label}
+                  {activeDownload.label}
                 </button>
                 <button
                   className="download-button"
                   type="button"
-                  onClick={() =>
-                    downloadFile(preferredDownload.platform === 'Android' ? downloadLinks.windows : downloadLinks.android, preferredDownload.platform === 'Android' ? 'Windows' : 'Android')
-                  }
+                  onClick={() => downloadFile(alternateDownload.href, alternateDownload.platform)}
                 >
                   <Download size={18} />
-                  {preferredDownload.platform === 'Android' ? 'Windows 파일' : 'Android APK'}
+                  {alternateDownload.label}
                 </button>
+                <a className="download-link" href={release.latestUrl} target="_blank" rel="noreferrer">
+                  릴리스 상태 보기
+                  <ExternalLink size={14} />
+                </a>
               </div>
               <div className="install-steps">
                 <span>
@@ -1507,6 +1704,10 @@ function App() {
                   <div>
                     <span>월드 피드</span>
                     <strong>{worlds.value.length.toLocaleString()}개 로드</strong>
+                  </div>
+                  <div>
+                    <span>앱 버전</span>
+                    <strong>v{release.currentVersion}</strong>
                   </div>
                 </div>
               </article>
@@ -1584,23 +1785,25 @@ function App() {
                           <span>이메일</span>
                           <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email@example.com" type="email" />
                         </label>
-                        <label className="field">
-                          <span>비밀번호</span>
-                          <input
-                            value={password}
-                            onChange={(event) => setPassword(event.target.value)}
-                            placeholder="6자 이상"
-                            type="password"
-                            minLength={6}
-                          />
-                        </label>
+                        {authMode === 'login' ? (
+                          <label className="field">
+                            <span>비밀번호</span>
+                            <input
+                              value={password}
+                              onChange={(event) => setPassword(event.target.value)}
+                              placeholder="6자 이상"
+                              type="password"
+                              minLength={6}
+                            />
+                          </label>
+                        ) : null}
                         <button
                           className="primary-button full"
                           type="submit"
-                          disabled={!email.trim() || password.length < 6 || busyAction === `cloud-${authMode}`}
+                          disabled={!email.trim() || (authMode === 'login' && password.length < 6) || busyAction === `cloud-${authMode}`}
                         >
                           {busyAction === `cloud-${authMode}` ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
-                          {authMode === 'signup' ? '계정 만들기' : '로그인'}
+                          {authMode === 'signup' ? '인증 메일 보내기' : '로그인'}
                         </button>
                       </form>
                     </div>
@@ -1907,7 +2110,7 @@ function App() {
             <div className="benefit-box">
               <span>
                 <CheckCircle2 size={16} />
-                친구 추가 없이 선택한 월드 참가 링크를 엽니다.
+                {worldBridgeTarget(joinTarget) ? '설치 앱 브리지로 Minecraft 친구/LAN 탭에 월드를 띄웁니다.' : 'Eggnet/Xbox activity handle 참가 링크를 엽니다.'}
               </span>
               <span>
                 <CheckCircle2 size={16} />
@@ -1972,7 +2175,7 @@ function App() {
                 </button>
               ))}
             </div>
-            {!hasOAuthProvider ? <p className="oauth-note">지금은 이메일 계정으로 바로 로그인할 수 있습니다.</p> : null}
+            {!hasOAuthProvider ? <p className="oauth-note">소셜 로그인은 Provider 설정 후 켜지고, 가입은 메일 링크 인증으로 진행됩니다.</p> : null}
             <div className="auth-tabs" aria-label="계정 모드">
               <button className={authMode === 'login' ? 'active' : ''} type="button" onClick={() => setAuthMode('login')}>
                 로그인
@@ -1992,13 +2195,19 @@ function App() {
                 <span>이메일</span>
                 <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email@example.com" type="email" autoFocus />
               </label>
-              <label className="field">
-                <span>비밀번호</span>
-                <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="6자 이상" type="password" minLength={6} />
-              </label>
-              <button className="primary-button full" type="submit" disabled={!email.trim() || password.length < 6 || busyAction === `cloud-${authMode}`}>
+              {authMode === 'login' ? (
+                <label className="field">
+                  <span>비밀번호</span>
+                  <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="6자 이상" type="password" minLength={6} />
+                </label>
+              ) : null}
+              <button
+                className="primary-button full"
+                type="submit"
+                disabled={!email.trim() || (authMode === 'login' && password.length < 6) || busyAction === `cloud-${authMode}`}
+              >
                 {busyAction === `cloud-${authMode}` ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
-                {authMode === 'signup' ? '계정 만들기' : '로그인'}
+                {authMode === 'signup' ? '인증 메일 보내기' : '로그인'}
               </button>
             </form>
             <button className="link-button" type="button" onClick={sendMagicLink} disabled={!email.trim() || busyAction === 'cloud-link'}>

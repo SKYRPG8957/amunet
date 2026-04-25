@@ -939,6 +939,7 @@ button:disabled {
   font-size: 13px;
   font-weight: 930;
   text-decoration: none;
+  cursor: pointer;
   background: #ffffff;
 }
 
@@ -989,18 +990,49 @@ button:disabled {
 }
 
 .clean-profile {
-  grid-template-columns: minmax(360px, 0.96fr) minmax(320px, 0.72fr);
+  grid-template-columns: minmax(360px, 0.96fr) minmax(280px, 0.7fr);
   align-items: start;
 }
 
 .primary-auth {
-  grid-row: 1 / span 2;
   min-height: 0;
 }
 
 .clean-profile .xuid-panel,
-.clean-profile .xbox-panel {
+.clean-profile .xbox-panel,
+.clean-profile .app-settings-panel {
   min-height: 205px;
+}
+
+.app-settings-panel {
+  grid-column: 1 / -1;
+}
+
+.setting-list {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.setting-list div {
+  display: grid;
+  gap: 5px;
+  min-height: 62px;
+  border: 1px solid #ded9ee;
+  border-radius: 8px;
+  padding: 10px;
+  background: #faf9ff;
+}
+
+.setting-list span {
+  color: #756d8f;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.setting-list strong {
+  color: var(--night);
+  font-size: 14px;
 }
 
 .egg-auth {
@@ -1901,8 +1933,13 @@ button:disabled {
   }
 
   .clean-profile .xuid-panel,
-  .clean-profile .xbox-panel {
+  .clean-profile .xbox-panel,
+  .clean-profile .app-settings-panel {
     min-height: 0;
+  }
+
+  .setting-list {
+    grid-template-columns: 1fr;
   }
 
   .search-row {

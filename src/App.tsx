@@ -131,10 +131,15 @@ const ADMIN_KEY_STORAGE_KEY = 'luma:admin-key:v1';
 const WORLD_CACHE_MS = 45_000;
 const PRESENCE_CACHE_MS = 120_000;
 const apiBase = (import.meta.env.VITE_STATUS_API_URL?.trim() || '').replace(/\/$/, '');
+const defaultReleaseAssets = {
+  windows: 'https://github.com/SKYRPG8957/amunet/releases/download/v0.1.0/luma-arcade-0.1.0%2B10-Luma.Arcade_0.1.0_x64-setup.exe',
+  android: 'https://github.com/SKYRPG8957/amunet/releases/download/v0.1.0/luma-arcade-0.1.0%2B10-debug.apk',
+  releases: 'https://github.com/SKYRPG8957/amunet/releases/latest',
+};
 const downloadLinks = {
-  windows: import.meta.env.VITE_WINDOWS_DOWNLOAD_URL?.trim() || '',
-  android: import.meta.env.VITE_ANDROID_DOWNLOAD_URL?.trim() || '',
-  releases: import.meta.env.VITE_RELEASES_URL?.trim() || '',
+  windows: import.meta.env.VITE_WINDOWS_DOWNLOAD_URL?.trim() || defaultReleaseAssets.windows,
+  android: import.meta.env.VITE_ANDROID_DOWNLOAD_URL?.trim() || defaultReleaseAssets.android,
+  releases: import.meta.env.VITE_RELEASES_URL?.trim() || defaultReleaseAssets.releases,
 };
 
 const COUNTRY_OPTIONS: Array<{ id: CountryMode; label: string }> = [
@@ -259,14 +264,38 @@ function isAdminRoute() {
   return url.pathname === '/admin' || url.searchParams.get('admin') === '1' || url.hash === '#admin';
 }
 
+function isTauriDesktop() {
+  return Boolean((window as typeof window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__);
+}
+
+function platformDownload() {
+  const ua = window.navigator.userAgent;
+  if (/Android/i.test(ua)) {
+    return {
+      platform: 'Android',
+      href: downloadLinks.android,
+      label: 'Android APK 다운로드',
+    };
+  }
+  return {
+    platform: 'Windows',
+    href: downloadLinks.windows,
+    label: 'Windows 앱 다운로드',
+  };
+}
+
 function App() {
   const [adminMode] = useState(() => isAdminRoute());
   const [tab, setTab] = useState<Tab>(() => (isAdminRoute() ? 'admin' : 'servers'));
-  const runtimeClass = Capacitor.isNativePlatform()
+  const isDesktopApp = isTauriDesktop();
+  const runtimeClass = isDesktopApp
+    ? 'native-windows'
+    : Capacitor.isNativePlatform()
     ? `native-${Capacitor.getPlatform()}`
     : /Android/i.test(window.navigator.userAgent)
       ? 'web-android'
       : 'web-desktop';
+  const preferredDownload = platformDownload();
   const [query, setQuery] = useState('');
   const [sort, setSort] = useState<SortMode>('recommended');
   const [sourceMode, setSourceMode] = useState<SourceMode>('all');
@@ -891,8 +920,12 @@ function App() {
     setToast(label);
   }
 
-  function handleDownloadFallback(platform: 'Windows' | 'Android') {
-    setToast(`${platform} 빌드 파일은 GitHub Release 연결 후 바로 내려받을 수 있습니다.`);
+  function downloadFile(href: string, platform: 'Windows' | 'Android') {
+    if (!href) {
+      setToast(`${platform} 다운로드 파일을 찾지 못했습니다.`);
+      return;
+    }
+    window.location.href = href;
   }
 
   return (
@@ -1150,54 +1183,56 @@ function App() {
               <div className="intro-title">
                 <Download size={18} />
                 <div>
-                  <strong>앱 설치</strong>
-                  <span>PC에서 실제 참가와 LAN/Friends 브리지를 쓰려면 Windows 앱이 필요합니다.</span>
+                  <strong>{isDesktopApp ? 'Windows 앱' : '앱 설치'}</strong>
+                  <span>
+                    {isDesktopApp
+                      ? 'PC 앱 모드입니다. Xbox 연동과 Friends/LAN 브리지 설정은 여기서 관리합니다.'
+                      : 'PC 참가와 LAN/Friends 브리지는 Windows 앱에서 처리합니다.'}
+                  </span>
                 </div>
               </div>
-              <span className={Capacitor.isNativePlatform() ? 'profile-chip on' : 'profile-chip'}>{Capacitor.isNativePlatform() ? '앱' : '웹'}</span>
+              <span className={isDesktopApp || Capacitor.isNativePlatform() ? 'profile-chip on' : 'profile-chip'}>
+                {isDesktopApp ? 'PC 앱' : Capacitor.isNativePlatform() ? '앱' : '웹'}
+              </span>
             </section>
 
             <section className="install-panel">
               <div className="install-copy">
-                <span className="eyebrow">DESKTOP REQUIRED</span>
-                <h2>Luma Windows 앱으로 참가</h2>
-                <p>웹은 서버 목록, 채팅, 계정 관리용입니다. Minecraft에 Friends/LAN 형태로 붙이는 브리지는 PC 앱에서 로컬 네트워크와 Xbox 세션을 처리합니다.</p>
+                <span className="eyebrow">{isDesktopApp ? 'APP MODE' : 'AUTO DOWNLOAD'}</span>
+                <h2>{isDesktopApp ? 'PC 앱 설정' : `${preferredDownload.platform}용 파일 받기`}</h2>
+                <p>
+                  {isDesktopApp
+                    ? '설치된 앱에서는 Minecraft 연결 준비 상태, Xbox 연동, 친구 프로필을 한 화면에서 관리합니다.'
+                    : '접속 기기를 확인해서 Windows에서는 설치 파일, Android에서는 APK를 바로 내려받습니다.'}
+                </p>
               </div>
               <div className="install-actions">
-                <a
+                <button
                   className="download-button primary"
-                  href={downloadLinks.windows || downloadLinks.releases || '#release-builds'}
-                  onClick={(event) => {
-                    if (!downloadLinks.windows && !downloadLinks.releases) {
-                      event.preventDefault();
-                      handleDownloadFallback('Windows');
-                    }
-                  }}
+                  type="button"
+                  onClick={() => downloadFile(preferredDownload.href, preferredDownload.platform as 'Windows' | 'Android')}
                 >
                   <Download size={18} />
-                  Windows 다운로드
-                </a>
-                <a
+                  {preferredDownload.label}
+                </button>
+                <button
                   className="download-button"
-                  href={downloadLinks.android || downloadLinks.releases || '#release-builds'}
-                  onClick={(event) => {
-                    if (!downloadLinks.android && !downloadLinks.releases) {
-                      event.preventDefault();
-                      handleDownloadFallback('Android');
-                    }
-                  }}
+                  type="button"
+                  onClick={() =>
+                    downloadFile(preferredDownload.platform === 'Android' ? downloadLinks.windows : downloadLinks.android, preferredDownload.platform === 'Android' ? 'Windows' : 'Android')
+                  }
                 >
                   <Download size={18} />
-                  Android APK
-                </a>
+                  {preferredDownload.platform === 'Android' ? 'Windows 파일' : 'Android APK'}
+                </button>
               </div>
               <div className="install-steps">
                 <span>
-                  <strong>1</strong>
-                  앱 설치
+                  <strong>{isDesktopApp ? 'ON' : '1'}</strong>
+                  {isDesktopApp ? 'PC 앱 실행 중' : '파일 다운로드'}
                 </span>
                 <span>
-                  <strong>2</strong>
+                  <strong>{isDesktopApp ? '2' : '2'}</strong>
                   Luma 로그인
                 </span>
                 <span>
@@ -1213,6 +1248,29 @@ function App() {
 
             <section className="profile-layout clean-profile">
               <span id="release-builds" className="anchor-target" aria-hidden="true" />
+              <article className="profile-panel app-settings-panel">
+                <div className="panel-heading">
+                  <div>
+                    <span className="eyebrow">SETUP</span>
+                    <h2>연결 설정</h2>
+                  </div>
+                  <ShieldCheck size={20} />
+                </div>
+                <div className="setting-list">
+                  <div>
+                    <span>실행 환경</span>
+                    <strong>{isDesktopApp ? 'Windows 앱' : preferredDownload.platform === 'Android' ? 'Android 웹' : 'PC 웹'}</strong>
+                  </div>
+                  <div>
+                    <span>브리지</span>
+                    <strong>{capabilities.bridge ? '사용 가능' : isDesktopApp ? '앱 헬퍼 필요' : '앱 설치 필요'}</strong>
+                  </div>
+                  <div>
+                    <span>월드 피드</span>
+                    <strong>{worlds.value.length.toLocaleString()}개 로드</strong>
+                  </div>
+                </div>
+              </article>
               <article className="profile-panel auth-panel primary-auth">
                 <div className="panel-heading">
                   <div>

@@ -1,6 +1,6 @@
 [package]
 name = "luma-arcade-desktop"
-version = "0.1.0"
+version = "0.1.1"
 description = "Luma Arcade desktop shell"
 authors = ["Luma Arcade"]
 license = ""

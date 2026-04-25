@@ -132,8 +132,8 @@ const WORLD_CACHE_MS = 45_000;
 const PRESENCE_CACHE_MS = 120_000;
 const apiBase = (import.meta.env.VITE_STATUS_API_URL?.trim() || '').replace(/\/$/, '');
 const defaultReleaseAssets = {
-  windows: 'https://github.com/SKYRPG8957/amunet/releases/download/v0.1.0/luma-arcade-0.1.0%2B10-Luma.Arcade_0.1.0_x64-setup.exe',
-  android: 'https://github.com/SKYRPG8957/amunet/releases/download/v0.1.0/luma-arcade-0.1.0%2B10-debug.apk',
+  windows: 'https://github.com/SKYRPG8957/amunet/releases/latest/download/luma-arcade-windows-setup.exe',
+  android: 'https://github.com/SKYRPG8957/amunet/releases/latest/download/luma-arcade-android-debug.apk',
   releases: 'https://github.com/SKYRPG8957/amunet/releases/latest',
 };
 const downloadLinks = {

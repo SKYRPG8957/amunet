@@ -72,10 +72,13 @@ jobs:
           APP_VERSION="$(node -p "require('./package.json').version")"
           mkdir -p release-artifacts/android
           cp android/app/build/outputs/apk/debug/app-debug.apk "release-artifacts/android/luma-arcade-${APP_VERSION}+${GITHUB_RUN_NUMBER}-debug.apk"
+          cp android/app/build/outputs/apk/debug/app-debug.apk "release-artifacts/android/luma-arcade-android-debug.apk"
           if [ -f android/app/build/outputs/apk/release/luma-arcade-release-signed.apk ]; then
             cp android/app/build/outputs/apk/release/luma-arcade-release-signed.apk "release-artifacts/android/luma-arcade-${APP_VERSION}+${GITHUB_RUN_NUMBER}-release-signed.apk"
+            cp android/app/build/outputs/apk/release/luma-arcade-release-signed.apk "release-artifacts/android/luma-arcade-android-release-signed.apk"
           elif [ -f android/app/build/outputs/apk/release/app-release-unsigned.apk ]; then
             cp android/app/build/outputs/apk/release/app-release-unsigned.apk "release-artifacts/android/luma-arcade-${APP_VERSION}+${GITHUB_RUN_NUMBER}-release-unsigned.apk"
+            cp android/app/build/outputs/apk/release/app-release-unsigned.apk "release-artifacts/android/luma-arcade-android-release-unsigned.apk"
           fi
       - uses: actions/upload-artifact@v4
         with:
@@ -112,6 +115,12 @@ jobs:
             ForEach-Object {
               $name = "luma-arcade-$version+$env:GITHUB_RUN_NUMBER-$($_.Name)"
               Copy-Item $_.FullName "release-artifacts/windows/$name"
+              if ($_.Extension -eq ".exe") {
+                Copy-Item $_.FullName "release-artifacts/windows/luma-arcade-windows-setup.exe"
+              }
+              if ($_.Extension -eq ".msi") {
+                Copy-Item $_.FullName "release-artifacts/windows/luma-arcade-windows-installer.msi"
+              }
             }
       - uses: actions/upload-artifact@v4
         with:

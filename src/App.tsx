@@ -1252,12 +1252,42 @@ function App() {
                 <UserRound size={18} />
                 <div>
                   <strong>프로필</strong>
-                  <span>계정 로그인과 Minecraft 연동 상태만 관리합니다.</span>
+                  <span>계정과 로그인 정보를 관리하세요.</span>
                 </div>
               </div>
               <span className={isDesktopApp || Capacitor.isNativePlatform() ? 'profile-chip on' : 'profile-chip'}>
                 {isDesktopApp ? 'PC 앱' : Capacitor.isNativePlatform() ? '앱' : '웹'}
               </span>
+            </section>
+
+            <section className="login-banner egg-profile-notice">
+              <strong>프로필 탭에서 로그인하세요.</strong>
+              <span>Microsoft 공식 OAuth만 사용하며 비밀번호 등 민감 정보는 수집하거나 접근하지 않습니다.</span>
+              <a href="https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow" target="_blank" rel="noreferrer">
+                OAuth에 대해 자세히 알아보기
+                <ExternalLink size={14} />
+              </a>
+            </section>
+
+            <section className="egg-profile-card">
+              <div className="egg-profile-avatar">
+                <UserRound size={48} />
+              </div>
+              <div className="egg-profile-state">
+                <h2>{xbox.signedIn ? accountName : '로그아웃됨'}</h2>
+                <span className={xbox.signedIn ? 'signed' : ''}>{xbox.signedIn ? '로그인됨' : '로그아웃됨'}</span>
+                {xbox.xuid ? <p>XUID {xbox.xuid}</p> : null}
+              </div>
+            </section>
+
+            <section className="egg-profile-actions">
+              <button className="primary-button" type="button" onClick={startXboxLogin} disabled={busyAction === 'xbox-login'}>
+                {busyAction === 'xbox-login' ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
+                로그인
+              </button>
+              <button className="secondary-button" type="button" onClick={() => setTab('servers')}>
+                게스트 로그인
+              </button>
             </section>
 
             <section className="install-panel">

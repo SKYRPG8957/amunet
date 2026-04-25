@@ -2369,8 +2369,83 @@ button:disabled {
 }
 
 .install-panel,
-.app-settings-panel {
+.app-settings-panel,
+.profile-layout.clean-profile {
   display: none;
+}
+
+.egg-profile-notice {
+  margin-bottom: 10px;
+}
+
+.egg-profile-card {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+  min-height: 98px;
+  border: 1px solid #e1e6ee;
+  border-radius: 8px;
+  padding: 14px;
+  background: #f8fafc;
+}
+
+.egg-profile-avatar {
+  display: grid;
+  width: 72px;
+  height: 72px;
+  place-items: center;
+  border-radius: 50%;
+  color: #6c7586;
+  background: #e9edf3;
+}
+
+.egg-profile-state {
+  min-width: 0;
+}
+
+.egg-profile-state h2 {
+  margin: 0 0 9px;
+  color: #202532;
+  font-size: 17px;
+}
+
+.egg-profile-state span {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  border-radius: 8px;
+  padding: 0 10px;
+  color: #b53232;
+  font-size: 12px;
+  font-weight: 850;
+  background: #ffe8eb;
+}
+
+.egg-profile-state span.signed {
+  color: #126b3d;
+  background: #e7f8ee;
+}
+
+.egg-profile-state p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.egg-profile-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.egg-profile-actions button {
+  min-width: 72px;
+  min-height: 38px;
+}
+
+.egg-profile-actions .primary-button {
+  background: #2f66d8;
 }
 
 .clean-profile {

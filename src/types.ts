@@ -37,6 +37,37 @@ export type BridgeStatus = {
   events: BridgeEvent[];
 };
 
+export type ProxyPassStatus = {
+  running: boolean;
+  ready: boolean;
+  phase: 'idle' | 'ProxyPass 준비' | 'ProxyPass 다운로드' | 'Java 25 런타임 다운로드' | 'Java 25 런타임 압축 해제' | 'starting' | 'auth' | 'ready' | 'error' | string;
+  error: string | null;
+  target: {
+    id?: string;
+    mode?: 'nethernet' | 'raknet' | string;
+    name?: string;
+    host?: string;
+    port?: number;
+    nethernetId?: string;
+    handleId?: string;
+  } | null;
+  proxyHost: string;
+  proxyPort: number;
+  joinUri: string | null;
+  authUri?: string | null;
+  authCode?: string | null;
+  javaPath: string | null;
+  jarPath: string | null;
+  workDir: string | null;
+  localAddresses: string[];
+  startedAt?: string;
+  logs: Array<{
+    type: string;
+    line: string;
+    at: string;
+  }>;
+};
+
 export type XboxStatus = {
   signedIn: boolean;
   xuid: string | null;

@@ -106,6 +106,7 @@ jobs:
       - run: npm ci
       - run: npm run version:sync
       - run: npm run bridge:sidecar
+      - run: npm run proxypass:prepare
       - run: npm run tauri:build
       - name: Collect Windows artifacts
         shell: pwsh

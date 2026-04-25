@@ -1,7 +1,7 @@
 {
   "name": "luma-arcade",
   "private": true,
-  "version": "0.1.13",
+  "version": "0.1.14",
   "type": "module",
   "scripts": {
     "dev": "concurrently -k -n api,web \"npm:dev:api\" \"npm:dev:web\"",
@@ -21,6 +21,7 @@
     "version:sync": "node tools/release/sync-version.mjs",
     "version:set": "node tools/release/sync-version.mjs",
     "bridge:sidecar": "node tools/release/build-bridge-sidecar.mjs",
+    "proxypass:prepare": "node tools/release/prepare-proxypass.mjs",
     "android:prepare": "node tools/release/prepare-android.mjs",
     "cap:add:android": "cap add android",
     "cap:add:ios": "cap add ios",
@@ -28,7 +29,7 @@
     "android": "npm run cap:sync && cap open android",
     "ios": "npm run cap:sync && cap open ios",
     "tauri:dev": "tauri dev",
-    "tauri:build": "tauri build"
+    "tauri:build": "npm run proxypass:prepare && tauri build"
   },
   "dependencies": {
     "@capacitor/core": "^7.6.2",

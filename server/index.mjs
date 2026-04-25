@@ -5,6 +5,7 @@ import fsSync from 'node:fs';
 import fs from 'node:fs/promises';
 import zlib from 'node:zlib';
 import crypto from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { URL } from 'node:url';
 import { createClient } from '@supabase/supabase-js';
 import bedrock from 'bedrock-protocol';
@@ -41,6 +42,22 @@ const bridgePort = Number(process.env.AMUNET_BRIDGE_PORT || 19132);
 const bridgeVersion = process.env.AMUNET_BEDROCK_VERSION || '26.10';
 const bridgeProtocol = Number(process.env.AMUNET_BEDROCK_PROTOCOL || 944);
 const allowPrivateHosts = process.env.AMUNET_ALLOW_PRIVATE_HOSTS === '1';
+const stateDir = path.resolve(
+  process.env.AMUNET_STATE_DIR ||
+    (process.env.LOCALAPPDATA
+      ? path.join(process.env.LOCALAPPDATA, 'LumaArcade')
+      : path.join(os.homedir(), '.luma-arcade')),
+);
+const proxyPassEnabled = process.env.AMUNET_PROXYPASS !== '0';
+const proxyPassPort = Number(process.env.AMUNET_PROXYPASS_PORT || process.env.AMUNET_BRIDGE_PORT || 19132);
+const proxyPassHost = process.env.AMUNET_PROXYPASS_HOST || '0.0.0.0';
+const proxyPassDownloadUrl =
+  process.env.AMUNET_PROXYPASS_URL || 'https://github.com/Kas-tle/ProxyPass/releases/latest/download/ProxyPass.jar';
+const javaRuntimeUrl =
+  process.env.AMUNET_JAVA_RUNTIME_URL ||
+  `https://api.adoptium.net/v3/binary/latest/25/ga/windows/${
+    process.arch === 'arm64' ? 'aarch64' : 'x64'
+  }/jre/hotspot/normal/eclipse`;
 const distDir = path.resolve(process.env.AMUNET_DIST_DIR || 'dist');
 const serveStaticEnabled = process.env.AMUNET_SERVE_STATIC !== '0';
 const prewarmEnabled = process.env.AMUNET_PREWARM !== '0';
@@ -79,6 +96,12 @@ let xboxDiscoverCache = null;
 let unifiedFeedCache = null;
 let unifiedRefreshPromise = null;
 let activeXboxBroadcast = null;
+let activeProxyPass = null;
+let proxyPassInstall = {
+  installing: false,
+  stage: 'idle',
+  error: null,
+};
 
 const emptyBridge = {
   running: false,
@@ -432,6 +455,459 @@ function bridgeStatus() {
       : { running: false },
     events: eventLog,
   };
+}
+
+function pushProxyPassLog(type, line) {
+  if (!activeProxyPass) return;
+  const item = {
+    type,
+    line: String(line || '').trim(),
+    at: new Date().toISOString(),
+  };
+  if (!item.line) return;
+  activeProxyPass.logs = [item, ...(activeProxyPass.logs || [])].slice(0, 120);
+
+  const authUri = item.line.match(/Go to\s+(https?:\/\/\S+)/i)?.[1];
+  const authCode = item.line.match(/Enter code\s+([A-Z0-9-]+)/i)?.[1];
+
+  if (authUri) {
+    activeProxyPass.authUri = authUri;
+  }
+  if (authCode) {
+    activeProxyPass.authCode = authCode;
+  }
+
+  if (/Go to |Enter code |Copied code/i.test(item.line)) {
+    activeProxyPass.phase = 'auth';
+  }
+  if (/server started on|NetherNet server started on|Bedrock server started on/i.test(item.line)) {
+    activeProxyPass.phase = 'ready';
+    activeProxyPass.ready = true;
+  }
+}
+
+function publicProxyHost() {
+  if (proxyPassHost === '0.0.0.0') {
+    return '127.0.0.1';
+  }
+  return proxyPassHost;
+}
+
+function localServerJoinUri(name, port = proxyPassPort) {
+  return `minecraft://?addExternalServer=${encodeURIComponent(`${name || 'Luma Proxy'}|${publicProxyHost()}:${port}`)}`;
+}
+
+function emptyProxyPass() {
+  return {
+    running: false,
+    ready: false,
+    phase: proxyPassInstall.installing ? proxyPassInstall.stage : 'idle',
+    error: proxyPassInstall.error,
+    target: null,
+    proxyHost: publicProxyHost(),
+    proxyPort: proxyPassPort,
+    joinUri: null,
+    authUri: null,
+    authCode: null,
+    javaPath: null,
+    jarPath: null,
+    workDir: null,
+    localAddresses: getLanAddresses(),
+    logs: [],
+  };
+}
+
+function proxyPassStatus() {
+  if (!activeProxyPass) {
+    return emptyProxyPass();
+  }
+
+  return {
+    running: true,
+    ready: Boolean(activeProxyPass.ready),
+    phase: activeProxyPass.phase || 'starting',
+    error: activeProxyPass.error || null,
+    target: activeProxyPass.target,
+    proxyHost: publicProxyHost(),
+    proxyPort: proxyPassPort,
+    joinUri: activeProxyPass.joinUri,
+    authUri: activeProxyPass.authUri || null,
+    authCode: activeProxyPass.authCode || null,
+    javaPath: activeProxyPass.javaPath,
+    jarPath: activeProxyPass.jarPath,
+    workDir: activeProxyPass.workDir,
+    localAddresses: getLanAddresses(),
+    logs: activeProxyPass.logs || [],
+    startedAt: activeProxyPass.startedAt,
+  };
+}
+
+function splitLines(chunk, onLine) {
+  String(chunk || '')
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .forEach(onLine);
+}
+
+function runCommandCapture(command, args = [], options = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, {
+      cwd: options.cwd,
+      env: options.env || process.env,
+      windowsHide: true,
+    });
+    let stdout = '';
+    let stderr = '';
+    const limit = 80_000;
+    const timeout = options.timeoutMs
+      ? setTimeout(() => {
+          child.kill();
+          reject(new Error(`${command} timed out`));
+        }, options.timeoutMs)
+      : null;
+
+    child.stdout?.on('data', (chunk) => {
+      stdout = (stdout + chunk.toString()).slice(-limit);
+    });
+    child.stderr?.on('data', (chunk) => {
+      stderr = (stderr + chunk.toString()).slice(-limit);
+    });
+    child.on('error', (error) => {
+      if (timeout) clearTimeout(timeout);
+      reject(error);
+    });
+    child.on('exit', (code) => {
+      if (timeout) clearTimeout(timeout);
+      if (code === 0) {
+        resolve({ stdout, stderr });
+        return;
+      }
+      reject(new Error(`${command} exited ${code}: ${stderr || stdout}`));
+    });
+  });
+}
+
+function parseJavaMajor(text) {
+  const version = String(text || '').match(/version "([^"]+)"/i)?.[1] || String(text || '').match(/openjdk ([^\s]+)/i)?.[1] || '';
+  if (!version) return 0;
+  if (version.startsWith('1.')) {
+    return Number(version.split('.')[1] || 0);
+  }
+  return Number(version.split('.')[0].replace(/\D/g, '') || 0);
+}
+
+async function getJavaMajor(javaPath) {
+  const result = await runCommandCapture(javaPath, ['-version'], { timeoutMs: 12_000 });
+  return parseJavaMajor(`${result.stdout}\n${result.stderr}`);
+}
+
+async function firstExisting(paths) {
+  for (const item of paths.filter(Boolean)) {
+    try {
+      const stat = await fs.stat(item);
+      if (stat.isFile()) return item;
+    } catch {
+      // Continue.
+    }
+  }
+  return null;
+}
+
+async function findFileRecursive(root, fileName, maxDepth = 5) {
+  async function walk(dir, depth) {
+    if (depth > maxDepth) return null;
+    let entries = [];
+    try {
+      entries = await fs.readdir(dir, { withFileTypes: true });
+    } catch {
+      return null;
+    }
+
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      if (entry.isFile() && entry.name.toLowerCase() === fileName.toLowerCase()) {
+        return full;
+      }
+      if (entry.isDirectory()) {
+        const found = await walk(full, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  return walk(root, 0);
+}
+
+async function downloadFile(url, destination, label) {
+  await fs.mkdir(path.dirname(destination), { recursive: true });
+  const temp = `${destination}.download`;
+  proxyPassInstall = { installing: true, stage: `${label} 다운로드`, error: null };
+  const response = await fetch(url, {
+    headers: { 'User-Agent': 'Luma-Arcade' },
+    signal: AbortSignal.timeout(180_000),
+  });
+  if (!response.ok) {
+    throw new Error(`${label} 다운로드 실패: HTTP ${response.status}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  await fs.writeFile(temp, buffer);
+  await fs.rename(temp, destination);
+  return destination;
+}
+
+async function expandZip(zipPath, destination) {
+  await fs.mkdir(destination, { recursive: true });
+  try {
+    await runCommandCapture('tar', ['-xf', zipPath, '-C', destination], { timeoutMs: 180_000 });
+    return;
+  } catch {
+    await runCommandCapture(
+      'powershell.exe',
+      ['-NoProfile', '-Command', `Expand-Archive -LiteralPath ${JSON.stringify(zipPath)} -DestinationPath ${JSON.stringify(destination)} -Force`],
+      { timeoutMs: 180_000 },
+    );
+  }
+}
+
+async function ensureProxyPassJar() {
+  const candidate = await firstExisting([
+    process.env.AMUNET_PROXYPASS_JAR,
+    process.env.LUMA_PROXYPASS_JAR,
+    path.resolve('src-tauri/resources/ProxyPass.jar'),
+    path.resolve('ProxyPass.jar'),
+    path.join(stateDir, 'tools', 'ProxyPass.jar'),
+    path.join(path.dirname(process.execPath || ''), 'ProxyPass.jar'),
+    path.join(path.dirname(process.execPath || ''), 'resources', 'ProxyPass.jar'),
+    path.join(path.dirname(process.execPath || ''), '..', 'resources', 'ProxyPass.jar'),
+  ]);
+
+  if (candidate) return candidate;
+
+  return downloadFile(proxyPassDownloadUrl, path.join(stateDir, 'tools', 'ProxyPass.jar'), 'ProxyPass');
+}
+
+async function ensureJavaRuntime() {
+  const javaExe = process.platform === 'win32' ? 'java.exe' : 'java';
+  const bundled = await firstExisting([
+    process.env.AMUNET_JAVA_PATH,
+    process.env.JAVA_HOME ? path.join(process.env.JAVA_HOME, 'bin', javaExe) : '',
+    await findFileRecursive(path.join(stateDir, 'runtime'), javaExe, 6),
+  ]);
+
+  for (const candidate of [bundled, 'java'].filter(Boolean)) {
+    try {
+      const major = await getJavaMajor(candidate);
+      if (major >= 25) {
+        return { path: candidate, major };
+      }
+    } catch {
+      // Continue.
+    }
+  }
+
+  if (process.platform !== 'win32') {
+    throw new Error('ProxyPass에는 Java 25 이상이 필요합니다. JAVA_HOME 또는 AMUNET_JAVA_PATH를 Java 25로 설정하세요.');
+  }
+
+  const runtimeRoot = path.join(stateDir, 'runtime');
+  const zipPath = path.join(runtimeRoot, 'temurin-jre25.zip');
+  const extractDir = path.join(runtimeRoot, 'temurin-jre25');
+  const existing = await findFileRecursive(extractDir, javaExe, 6);
+  if (existing) {
+    const major = await getJavaMajor(existing);
+    if (major >= 25) return { path: existing, major };
+  }
+
+  proxyPassInstall = { installing: true, stage: 'Java 25 런타임 다운로드', error: null };
+  await fs.rm(extractDir, { recursive: true, force: true });
+  await downloadFile(javaRuntimeUrl, zipPath, 'Java 25 런타임');
+  proxyPassInstall = { installing: true, stage: 'Java 25 런타임 압축 해제', error: null };
+  await expandZip(zipPath, extractDir);
+  const javaPath = await findFileRecursive(extractDir, javaExe, 6);
+  if (!javaPath) {
+    throw new Error('다운로드한 Java 런타임에서 java.exe를 찾지 못했습니다.');
+  }
+  const major = await getJavaMajor(javaPath);
+  if (major < 25) {
+    throw new Error(`ProxyPass에는 Java 25 이상이 필요합니다. 감지된 Java: ${major || 'unknown'}`);
+  }
+  proxyPassInstall = { installing: false, stage: 'idle', error: null };
+  return { path: javaPath, major };
+}
+
+function yamlString(value) {
+  return JSON.stringify(String(value ?? ''));
+}
+
+function normalizeProxyPassTarget(input) {
+  const raw = input?.target || input || {};
+  const nethernetId = String(raw.nethernetId || raw.netherNetId || '').trim();
+  const name = String(raw.name || raw.title || raw.host || 'Luma Proxy').trim().slice(0, 48);
+
+  if (nethernetId) {
+    if (!/^[a-zA-Z0-9:_-]{6,160}$/.test(nethernetId)) {
+      throw new Error('NetherNet ID 형식이 올바르지 않습니다.');
+    }
+    return {
+      id: String(raw.id || raw.handleId || nethernetId),
+      mode: 'nethernet',
+      name,
+      nethernetId,
+      handleId: String(raw.handleId || ''),
+      version: String(raw.version || bridgeVersion),
+      protocol: Number(raw.protocol || bridgeProtocol),
+    };
+  }
+
+  const target = normalizeTarget(raw);
+  return {
+    ...target,
+    mode: 'raknet',
+  };
+}
+
+async function writeProxyPassConfig(workDir, target, options = {}) {
+  const destination =
+    target.mode === 'nethernet'
+      ? [`  nethernet-id: ${yamlString(target.nethernetId)}`, '  transport: nethernet']
+      : [`  host: ${yamlString(target.host)}`, `  port: ${target.port}`, '  transport: raknet'];
+  const config = [
+    'proxy:',
+    `  host: ${yamlString(proxyPassHost)}`,
+    `  port: ${proxyPassPort}`,
+    '  transport: raknet',
+    'destination:',
+    ...destination,
+    'online-mode: true',
+    'save-auth-details: true',
+    `broadcast-session: ${options.broadcastSession ? 'true' : 'false'}`,
+    'max-clients: 1',
+    'packet-testing: false',
+    'log-packets: false',
+    'log-to: file',
+    'enable-ui: false',
+    'follow-transfers: true',
+    'download-packs: true',
+    'invert-ignored-list: false',
+    'ignored-packets:',
+    '  - "NetworkStackLatencyPacket"',
+    '  - "LevelChunkPacket"',
+    '  - "MovePlayerPacket"',
+    '  - "PlayerAuthInputPacket"',
+    '  - "NetworkChunkPublisherUpdatePacket"',
+    '  - "ClientCacheBlobStatusPacket"',
+    '  - "ClientCacheMissResponsePacket"',
+    '',
+  ].join('\n');
+
+  await fs.mkdir(workDir, { recursive: true });
+  await fs.writeFile(path.join(workDir, 'config.yml'), config, 'utf8');
+}
+
+function waitForProxyPassSignal(timeoutMs = 10_000) {
+  return new Promise((resolve) => {
+    const startedAt = Date.now();
+    const id = setInterval(() => {
+      const authPromptReady =
+        activeProxyPass?.phase === 'auth' && (activeProxyPass.authCode || Date.now() - startedAt > 4_000);
+      if (!activeProxyPass || activeProxyPass.ready || authPromptReady || activeProxyPass.error) {
+        clearInterval(id);
+        resolve(proxyPassStatus());
+        return;
+      }
+      if (Date.now() - startedAt > timeoutMs) {
+        clearInterval(id);
+        resolve(proxyPassStatus());
+      }
+    }, 250);
+  });
+}
+
+async function stopProxyPass(reason = 'ProxyPass stopped') {
+  if (!activeProxyPass) return;
+  const current = activeProxyPass;
+  activeProxyPass = null;
+  try {
+    current.child.kill();
+  } catch {
+    // Process may already be gone.
+  }
+  pushEvent('proxypass', 'ProxyPass를 중지했습니다.', { reason });
+}
+
+async function startProxyPass(input) {
+  if (!proxyPassEnabled) {
+    throw new ApiError(503, 'ProxyPass가 비활성화되어 있습니다.');
+  }
+
+  const target = normalizeProxyPassTarget(input);
+  await stopBridge('ProxyPass start');
+  await stopProxyPass('Restarting ProxyPass');
+
+  try {
+    proxyPassInstall = { installing: true, stage: 'ProxyPass 준비', error: null };
+    const jarPath = await ensureProxyPassJar();
+    const java = await ensureJavaRuntime();
+    const workDir = path.join(stateDir, 'proxypass');
+    await writeProxyPassConfig(workDir, target, {
+      broadcastSession: Boolean(input?.broadcastSession),
+    });
+
+    const child = spawn(java.path, ['-jar', jarPath], {
+      cwd: workDir,
+      env: process.env,
+      windowsHide: true,
+    });
+    activeProxyPass = {
+      child,
+      target,
+      phase: 'starting',
+      ready: false,
+      error: null,
+      javaPath: java.path,
+      jarPath,
+      workDir,
+      logs: [],
+      joinUri: localServerJoinUri(`Luma - ${target.name}`, proxyPassPort),
+      startedAt: new Date().toISOString(),
+    };
+    proxyPassInstall = { installing: false, stage: 'idle', error: null };
+    pushEvent('proxypass', 'ProxyPass를 시작했습니다.', {
+      mode: target.mode,
+      name: target.name,
+      port: proxyPassPort,
+    });
+
+    child.stdout?.on('data', (chunk) => splitLines(chunk, (line) => pushProxyPassLog('stdout', line)));
+    child.stderr?.on('data', (chunk) => splitLines(chunk, (line) => pushProxyPassLog('stderr', line)));
+    child.on('error', (error) => {
+      if (!activeProxyPass || activeProxyPass.child !== child) return;
+      activeProxyPass.phase = 'error';
+      activeProxyPass.error = error.message;
+      pushProxyPassLog('error', error.message);
+    });
+    child.on('exit', (code) => {
+      if (!activeProxyPass || activeProxyPass.child !== child) return;
+      const logs = activeProxyPass.logs || [];
+      const targetSnapshot = activeProxyPass.target;
+      const error = code === 0 ? null : `ProxyPass exited ${code}`;
+      activeProxyPass = null;
+      pushEvent(code === 0 ? 'proxypass' : 'error', code === 0 ? 'ProxyPass가 종료되었습니다.' : 'ProxyPass가 비정상 종료되었습니다.', {
+        code,
+        target: targetSnapshot,
+        error,
+        logs: logs.slice(0, 8),
+      });
+    });
+
+    return waitForProxyPassSignal(12_000);
+  } catch (error) {
+    proxyPassInstall = { installing: false, stage: 'error', error: error.message || 'ProxyPass 시작 실패' };
+    await stopProxyPass('ProxyPass start failed');
+    throw error;
+  }
 }
 
 function xboxAuthHeader(token = xboxToken) {
@@ -1912,11 +2388,6 @@ async function startBridge(targetInput) {
 
   activeBridge = { server, target, clients };
   pushEvent('bridge', '브리지를 시작했습니다.', target);
-  if (xboxToken?.XSTSToken) {
-    publishXboxBridgeSession(target).catch((error) => {
-      pushEvent('xbox-session', 'Xbox Live 세션 방송 실패.', { message: error.message });
-    });
-  }
 
   server.on('connect', (client) => {
     const address = client.connection?.address || 'unknown';
@@ -2025,6 +2496,7 @@ async function route(req, res) {
         ok: true,
         product: 'Luma Bridge API',
         bridge: operator ? bridgeStatus() : emptyBridge,
+        proxypass: operator ? proxyPassStatus() : emptyProxyPass(),
         xbox: operator ? xboxStatus() : emptyXbox,
         providers: {
           eggnet: providerEggnetEnabled,
@@ -2035,6 +2507,7 @@ async function route(req, res) {
           supabaseEdge: false,
           static: serveStaticEnabled,
           bridge: operator,
+          proxyPass: operator && proxyPassEnabled,
           xboxLogin: providerXboxEnabled && operator,
           bedrockPing: operator,
         },
@@ -2114,6 +2587,27 @@ async function route(req, res) {
       return;
     }
 
+    if (req.method === 'GET' && url.pathname === '/api/proxypass/status') {
+      assertOperator(req, 'ProxyPass 상태 조회');
+      writeJson(res, 200, { ok: true, proxypass: proxyPassStatus() });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/proxypass/start') {
+      assertOperator(req, 'ProxyPass 시작');
+      const body = await readJson(req);
+      const proxypass = await startProxyPass(body);
+      writeJson(res, 200, { ok: true, proxypass });
+      return;
+    }
+
+    if (req.method === 'POST' && url.pathname === '/api/proxypass/stop') {
+      assertOperator(req, 'ProxyPass 중지');
+      await stopProxyPass('Stopped by user');
+      writeJson(res, 200, { ok: true, proxypass: proxyPassStatus() });
+      return;
+    }
+
     if (req.method === 'POST' && url.pathname === '/api/xbox/login/start') {
       assertOperator(req, 'Xbox 로그인');
       const status = await startXboxLogin();
@@ -2123,11 +2617,6 @@ async function route(req, res) {
 
     if (req.method === 'GET' && url.pathname === '/api/xbox/login/status') {
       assertOperator(req, 'Xbox 로그인 상태 조회');
-      if (xboxToken?.XSTSToken && activeBridge && !activeXboxBroadcast) {
-        publishXboxBridgeSession(activeBridge.target).catch((error) => {
-          pushEvent('xbox-session', 'Xbox Live 세션 방송 실패.', { message: error.message });
-        });
-      }
       writeJson(res, 200, { ok: true, xbox: xboxStatus() });
       return;
     }
@@ -2143,9 +2632,7 @@ async function route(req, res) {
 
     if (req.method === 'POST' && url.pathname === '/api/xbox/broadcast/start') {
       assertOperator(req, 'Xbox 세션 방송');
-      const broadcast = await publishXboxBridgeSession(activeBridge?.target);
-      writeJson(res, 200, { ok: true, broadcast: bridgeStatus().xboxBroadcast || broadcast });
-      return;
+      throw new ApiError(501, '기존 Xbox 세션 방송은 실제 NetherNet 리스너 없이 타임아웃을 만들 수 있어 비활성화했습니다. Eggnet 월드는 ProxyPass 참가를 사용하세요.');
     }
 
     if (req.method === 'POST' && url.pathname === '/api/xbox/broadcast/stop') {
@@ -2250,5 +2737,12 @@ api.listen(apiPort, apiHost, () => {
 
 process.on('SIGINT', async () => {
   await stopBridge('SIGINT');
+  await stopProxyPass('SIGINT');
+  api.close(() => process.exit(0));
+});
+
+process.on('SIGTERM', async () => {
+  await stopBridge('SIGTERM');
+  await stopProxyPass('SIGTERM');
   api.close(() => process.exit(0));
 });

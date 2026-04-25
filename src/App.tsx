@@ -35,6 +35,7 @@ import type {
   BridgeStatus,
   FeaturedTarget,
   HostPresence,
+  ProxyPassStatus,
   TrackedXuid,
   WorldProviderStatus,
   XboxStatus,
@@ -107,6 +108,7 @@ type RuntimeCapabilities = {
   supabaseEdge: boolean;
   static: boolean;
   bridge: boolean;
+  proxyPass: boolean;
   xboxLogin: boolean;
   bedrockPing: boolean;
 };
@@ -119,6 +121,24 @@ const emptyBridge: BridgeStatus = {
   lanAddresses: [],
   clients: [],
   events: [],
+};
+
+const emptyProxyPass: ProxyPassStatus = {
+  running: false,
+  ready: false,
+  phase: 'idle',
+  error: null,
+  target: null,
+  proxyHost: '127.0.0.1',
+  proxyPort: 19132,
+  joinUri: null,
+  authUri: null,
+  authCode: null,
+  javaPath: null,
+  jarPath: null,
+  workDir: null,
+  localAddresses: [],
+  logs: [],
 };
 
 const emptyXbox: XboxStatus = {
@@ -137,6 +157,7 @@ const defaultCapabilities: RuntimeCapabilities = {
   supabaseEdge: false,
   static: false,
   bridge: true,
+  proxyPass: true,
   xboxLogin: true,
   bedrockPing: true,
 };
@@ -209,7 +230,7 @@ function withTimeout(init?: RequestInit, timeoutMs = 2500): RequestInit {
 }
 
 function prefersLocalApi(url: string) {
-  return /^\/api\/(health|bridge|xbox|status\/bedrock|worlds\/discover|join\/simple)/.test(url);
+  return /^\/api\/(health|bridge|proxypass|xbox|status\/bedrock|worlds\/discover|join\/simple)/.test(url);
 }
 
 async function requestJson<T>(url: string, init?: RequestInit): Promise<T> {
@@ -377,6 +398,23 @@ function worldBridgeTarget(world: ActivityWorld): BridgeTargetInput | null {
   };
 }
 
+function worldProxyTarget(world: ActivityWorld) {
+  const nethernetId = String(world.nethernetId || '').trim();
+  if (!nethernetId) return null;
+  return {
+    id: world.id || world.handleId || nethernetId,
+    name: world.title || world.ownerGamertag || 'Minecraft World',
+    handleId: world.handleId,
+    nethernetId,
+    protocol: world.protocol || undefined,
+    version: world.version || undefined,
+  };
+}
+
+function minecraftLocalServerUri(name: string, port: number) {
+  return `minecraft://?addExternalServer=${encodeURIComponent(`${name || 'Luma Proxy'}|127.0.0.1:${port}`)}`;
+}
+
 function App() {
   const [adminMode] = useState(() => isAdminRoute());
   const [tab, setTab] = useState<Tab>(() => (isAdminRoute() ? 'admin' : 'servers'));
@@ -417,6 +455,7 @@ function App() {
     value: [],
   });
   const [bridge, setBridge] = useState<BridgeStatus>(emptyBridge);
+  const [proxyPass, setProxyPass] = useState<ProxyPassStatus>(emptyProxyPass);
   const [xbox, setXbox] = useState<XboxStatus>(emptyXbox);
   const [capabilities, setCapabilities] = useState<RuntimeCapabilities>(defaultCapabilities);
   const [cloudUser, setCloudUser] = useState<CloudUser | null>(null);
@@ -483,9 +522,9 @@ function App() {
     loadChat();
     loadOAuthAvailability();
     loadReleaseInfo();
-    const id = adminMode ? window.setInterval(refreshBridge, 2200) : null;
+    const id = window.setInterval(refreshBridge, 2200);
     return () => {
-      if (id) window.clearInterval(id);
+      window.clearInterval(id);
     };
   }, [adminMode]);
 
@@ -604,12 +643,14 @@ function App() {
     try {
       const payload = await requestJson<{
         bridge: BridgeStatus;
+        proxypass?: ProxyPassStatus;
         xbox: XboxStatus;
         capabilities?: Partial<RuntimeCapabilities>;
       }>('/api/health', {
         headers: operatorHeaders(operatorKey),
       });
       setBridge(payload.bridge);
+      if (payload.proxypass) setProxyPass(payload.proxypass);
       setXbox(payload.xbox);
       setCapabilities({ ...defaultCapabilities, ...(payload.capabilities || {}) });
     } catch (error) {
@@ -619,10 +660,11 @@ function App() {
 
   async function refreshBridge() {
     try {
-      const payload = await requestJson<{ bridge: BridgeStatus }>('/api/bridge/status', {
+      const payload = await requestJson<{ bridge: BridgeStatus; proxypass?: ProxyPassStatus }>('/api/health', {
         headers: operatorHeaders(),
       });
       setBridge(payload.bridge);
+      if (payload.proxypass) setProxyPass(payload.proxypass);
     } catch {
       // Local API may still be booting.
     }
@@ -866,6 +908,37 @@ function App() {
     setBusyAction(`join:${world.handleId}`);
 
     try {
+      const proxyTarget = worldProxyTarget(world);
+      if (proxyTarget) {
+        if (!capabilities.proxyPass) {
+          setToast('Eggnet 월드 참가는 Windows 앱의 ProxyPass 브리지가 필요합니다.');
+          setTab('profile');
+          return;
+        }
+
+        const payload = await requestJson<{ proxypass: ProxyPassStatus }>('/api/proxypass/start', {
+          method: 'POST',
+          headers: operatorHeaders(),
+          body: JSON.stringify({ target: proxyTarget }),
+        });
+        setProxyPass(payload.proxypass);
+        setJoinTarget(null);
+
+        if (payload.proxypass.ready && payload.proxypass.joinUri) {
+          window.location.assign(payload.proxypass.joinUri);
+          setToast('ProxyPass 로컬 월드로 Minecraft를 여는 중입니다.');
+          return;
+        }
+
+        if (payload.proxypass.phase === 'auth') {
+          setToast('열린 Microsoft 인증을 완료한 뒤 같은 월드에서 참가를 다시 누르세요.');
+        } else {
+          setToast('ProxyPass가 시작 중입니다. 잠시 후 참가를 다시 누르세요.');
+        }
+        setTab('profile');
+        return;
+      }
+
       const bridgeTarget = worldBridgeTarget(world);
       if (bridgeTarget) {
         const payload = await requestJson<{ bridge: BridgeStatus }>('/api/bridge/start', {
@@ -874,9 +947,9 @@ function App() {
           body: JSON.stringify(bridgeTarget),
         });
         setBridge(payload.bridge);
-        setToast(xbox.signedIn ? 'Minecraft 친구 탭에 Luma 월드를 띄우는 중입니다.' : 'Minecraft LAN 탭에 Luma 월드를 띄우는 중입니다.');
+        window.location.assign(minecraftLocalServerUri(`Luma - ${bridgeTarget.name}`, payload.bridge.bridgePort));
+        setToast('Minecraft 로컬 브리지로 여는 중입니다.');
         setJoinTarget(null);
-        setTab('profile');
         return;
       }
 
@@ -1152,6 +1225,23 @@ function App() {
       });
       setBridge(payload.bridge);
       setToast('브리지를 중지했습니다.');
+    } catch (error) {
+      setToast(messageFrom(error));
+    } finally {
+      setBusyAction(null);
+    }
+  }
+
+  async function stopProxyPass() {
+    setBusyAction('proxypass-stop');
+
+    try {
+      const payload = await requestJson<{ proxypass: ProxyPassStatus }>('/api/proxypass/stop', {
+        method: 'POST',
+        headers: operatorHeaders(),
+      });
+      setProxyPass(payload.proxypass);
+      setToast('ProxyPass를 중지했습니다.');
     } catch (error) {
       setToast(messageFrom(error));
     } finally {
@@ -1702,6 +1792,20 @@ function App() {
                     <strong>{capabilities.bridge ? '사용 가능' : isDesktopApp ? '앱 헬퍼 필요' : '앱 설치 필요'}</strong>
                   </div>
                   <div>
+                    <span>Eggnet 참가</span>
+                    <strong>
+                      {proxyPass.ready
+                        ? `${proxyPass.proxyPort} 포트 준비`
+                        : proxyPass.running
+                          ? proxyPass.phase === 'auth'
+                            ? 'Microsoft 인증 중'
+                            : '시작 중'
+                          : capabilities.proxyPass
+                            ? 'ProxyPass 가능'
+                            : 'PC 앱 필요'}
+                    </strong>
+                  </div>
+                  <div>
                     <span>월드 피드</span>
                     <strong>{worlds.value.length.toLocaleString()}개 로드</strong>
                   </div>
@@ -1711,6 +1815,46 @@ function App() {
                   </div>
                 </div>
               </article>
+              {proxyPass.running || proxyPass.error ? (
+                <article className="profile-panel">
+                  <div className="panel-heading">
+                    <div>
+                      <span className="eyebrow">PROXYPASS</span>
+                      <h2>{proxyPass.ready ? 'Minecraft 연결 준비됨' : proxyPass.phase === 'auth' ? 'Microsoft 인증 대기' : '연결 준비 중'}</h2>
+                    </div>
+                    <Wifi size={20} />
+                  </div>
+                  <div className="account-card signed">
+                    <CheckCircle2 size={18} />
+                    <div>
+                      <strong>{proxyPass.target?.name || 'Luma Proxy'}</strong>
+                      <span>
+                        {proxyPass.ready
+                          ? `127.0.0.1:${proxyPass.proxyPort}`
+                          : proxyPass.authCode
+                            ? `인증 코드 ${proxyPass.authCode}`
+                            : proxyPass.error || proxyPass.logs[0]?.line || 'ProxyPass 초기화 중'}
+                      </span>
+                    </div>
+                    {proxyPass.running ? (
+                      <button className="secondary-button" type="button" onClick={stopProxyPass} disabled={busyAction === 'proxypass-stop'}>
+                        <Square size={15} />
+                        중지
+                      </button>
+                    ) : null}
+                  </div>
+                  {proxyPass.phase === 'auth' ? (
+                    <div className="device-code">
+                      <span>{proxyPass.authUri || 'https://www.microsoft.com/link'}</span>
+                      <strong>{proxyPass.authCode || '코드 확인 중'}</strong>
+                      <button type="button" onClick={() => copyText(proxyPass.authCode || '')} disabled={!proxyPass.authCode}>
+                        <Copy size={15} />
+                        코드 복사
+                      </button>
+                    </div>
+                  ) : null}
+                </article>
+              ) : null}
               <article className="profile-panel auth-panel primary-auth">
                 <div className="panel-heading">
                   <div>
@@ -2110,7 +2254,11 @@ function App() {
             <div className="benefit-box">
               <span>
                 <CheckCircle2 size={16} />
-                {worldBridgeTarget(joinTarget) ? '설치 앱 브리지로 Minecraft 친구/LAN 탭에 월드를 띄웁니다.' : 'Eggnet/Xbox activity handle 참가 링크를 엽니다.'}
+                {worldProxyTarget(joinTarget)
+                  ? '설치 앱의 ProxyPass가 Eggnet NetherNet 월드로 실제 프록시 연결을 만듭니다.'
+                  : worldBridgeTarget(joinTarget)
+                    ? '설치 앱 브리지로 Minecraft 로컬 월드를 열고 선택한 서버로 이동합니다.'
+                    : 'Xbox activity handle 참가 링크를 엽니다.'}
               </span>
               <span>
                 <CheckCircle2 size={16} />

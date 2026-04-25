@@ -5,6 +5,7 @@ export type OAuthProvider = 'google' | 'azure' | 'discord' | 'github';
 
 const LOCAL_TRACKED_XUIDS = 'amunet:tracked-xuids:v1';
 const LOCAL_CHAT_MESSAGES = 'luma:community-chat:v1';
+const LOCAL_GUEST_USER = 'luma:guest-user:v1';
 
 export type CloudUser = {
   id: string;
@@ -94,8 +95,10 @@ function mapTrackedRow(row: Record<string, unknown>): TrackedXuid {
 }
 
 async function getSessionUser(): Promise<CloudUser | null> {
+  const guest = readGuestUser();
+
   if (!supabase) {
-    return null;
+    return guest;
   }
 
   const { data, error } = await supabase.auth.getSession();
@@ -116,13 +119,40 @@ async function getSessionUser(): Promise<CloudUser | null> {
               ? user.user_metadata.name
               : null,
       }
-    : null;
+    : guest;
+}
+
+function readGuestUser(): CloudUser | null {
+  try {
+    const raw = window.localStorage.getItem(LOCAL_GUEST_USER);
+    return raw ? (JSON.parse(raw) as CloudUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeGuestUser(user: CloudUser | null) {
+  if (user) {
+    window.localStorage.setItem(LOCAL_GUEST_USER, JSON.stringify(user));
+  } else {
+    window.localStorage.removeItem(LOCAL_GUEST_USER);
+  }
 }
 
 export { isBackendConfigured };
 
 export async function getCloudUser() {
   return getSessionUser();
+}
+
+export function signInGuestCloud() {
+  const user = {
+    id: `guest-${crypto.randomUUID()}`,
+    email: null,
+    displayName: `Guest${Math.floor(1000 + Math.random() * 9000)}`,
+  };
+  writeGuestUser(user);
+  return user;
 }
 
 export function onCloudAuthChange(callback: (user: CloudUser | null) => void) {
@@ -223,6 +253,7 @@ export async function signInOAuthCloud(provider: OAuthProvider) {
 }
 
 export async function signOutCloud() {
+  writeGuestUser(null);
   if (!supabase) {
     return;
   }
@@ -296,6 +327,24 @@ export async function sendCommunityMessage(body: string, country = 'GLOBAL', roo
     throw new Error('Luma 계정 로그인이 필요합니다.');
   }
 
+  if (user.id.startsWith('guest-')) {
+    const current = readLocalMessages();
+    const next = [
+      ...current,
+      {
+        id: `local-${Date.now()}`,
+        room,
+        authorId: user.id,
+        authorName: user.displayName || '게스트',
+        body: trimmed,
+        country,
+        createdAt: new Date().toISOString(),
+      },
+    ];
+    writeLocalMessages(next);
+    return next.filter((message) => message.room === room).slice(-80);
+  }
+
   const { error } = await supabase.from('community_messages').insert({
     room,
     author_id: user.id,
@@ -361,6 +410,22 @@ export async function addTrackedXuid(value: string, gamertag?: string | null): P
     throw new Error('XUID 저장은 Luma 계정 로그인이 필요합니다.');
   }
 
+  if (user.id.startsWith('guest-')) {
+    const current = readLocalTracked();
+    const next = [
+      {
+        id: xuid,
+        xuid,
+        gamertag: cleanGamertag,
+        note: null,
+        createdAt: new Date().toISOString(),
+      },
+      ...current.filter((item) => item.xuid !== xuid),
+    ];
+    writeLocalTracked(next);
+    return next;
+  }
+
   const { error } = await supabase
     .from('tracked_xuids')
     .upsert(
@@ -392,6 +457,12 @@ export async function removeTrackedXuid(item: TrackedXuid): Promise<TrackedXuid[
 
   if (!user) {
     throw new Error('XUID 삭제는 Luma 계정 로그인이 필요합니다.');
+  }
+
+  if (user.id.startsWith('guest-')) {
+    const next = readLocalTracked().filter((entry) => entry.xuid !== item.xuid);
+    writeLocalTracked(next);
+    return next;
   }
 
   const { error } = await supabase.from('tracked_xuids').delete().eq('id', item.id).eq('owner_id', user.id);

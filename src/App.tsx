@@ -49,6 +49,7 @@ import {
   removeTrackedXuid,
   sendCommunityMessage,
   signInCloud,
+  signInGuestCloud,
   signInOAuthCloud,
   signInPasswordCloud,
   signOutCloud,
@@ -708,14 +709,11 @@ function App() {
     setBusyAction(`join:${world.handleId}`);
 
     try {
-      const payload = await requestJson<{ joinUri: string }>('/api/join/simple', {
-        method: 'POST',
-        body: JSON.stringify({
-          serverId: world.serverId || world.id,
-          handleId: world.handleId,
-        }),
-      });
-      window.location.href = payload.joinUri || world.uri;
+      const joinUri = world.uri || `minecraft://activityHandleJoin/?handle=${encodeURIComponent(world.handleId)}`;
+      window.location.assign(joinUri);
+      window.setTimeout(() => {
+        setToast('Minecraft가 열리지 않으면 PC/Android 앱에서 다시 시도하거나 URI 복사를 사용하세요.');
+      }, 900);
     } catch (error) {
       setToast(messageFrom(error));
     } finally {
@@ -813,6 +811,15 @@ function App() {
     } finally {
       setBusyAction(null);
     }
+  }
+
+  async function continueAsGuest() {
+    const user = signInGuestCloud();
+    setCloudUser(user);
+    setAuthOpen(false);
+    setToast('게스트 로그인 완료');
+    setTab('servers');
+    setTracked(await loadTrackedXuids());
   }
 
   async function startOAuth(provider: OAuthProvider) {
@@ -1336,7 +1343,7 @@ function App() {
                 <KeyRound size={16} />
                 로그인
               </button>
-              <button className="secondary-button" type="button" onClick={() => setTab('servers')}>
+              <button className="secondary-button" type="button" onClick={continueAsGuest}>
                 게스트 로그인
               </button>
             </section>
@@ -1909,6 +1916,9 @@ function App() {
             </form>
             <button className="link-button" type="button" onClick={sendMagicLink} disabled={!email.trim() || busyAction === 'cloud-link'}>
               비밀번호 없이 메일 링크로 로그인
+            </button>
+            <button className="secondary-button full" type="button" onClick={continueAsGuest}>
+              게스트로 바로 시작
             </button>
           </section>
         </div>

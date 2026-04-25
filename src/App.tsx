@@ -1249,14 +1249,10 @@ function App() {
           <>
             <section className="intro compact profile-top">
               <div className="intro-title">
-                <Download size={18} />
+                <UserRound size={18} />
                 <div>
-                  <strong>{isDesktopApp ? 'Windows 앱' : '앱 설치'}</strong>
-                  <span>
-                    {isDesktopApp
-                      ? 'PC 앱 모드입니다. Xbox 연동과 Friends/LAN 브리지 설정은 여기서 관리합니다.'
-                      : 'PC 참가와 LAN/Friends 브리지는 Windows 앱에서 처리합니다.'}
-                  </span>
+                  <strong>프로필</strong>
+                  <span>계정 로그인과 Minecraft 연동 상태만 관리합니다.</span>
                 </div>
               </div>
               <span className={isDesktopApp || Capacitor.isNativePlatform() ? 'profile-chip on' : 'profile-chip'}>
@@ -1371,22 +1367,21 @@ function App() {
                 ) : (
                   <>
                     <div className="egg-auth compact-auth">
-                      <div className="social-auth" aria-label="소셜 로그인">
-                        {OAUTH_BUTTONS.map((provider) => (
-                          <button
-                            className={`oauth-button ${provider.id} ${oauthEnabled[provider.id] ? '' : 'disabled'}`}
-                            type="button"
-                            key={provider.id}
-                            onClick={() => startOAuth(provider.id)}
-                            disabled={!oauthChecked || !oauthEnabled[provider.id] || busyAction === `oauth-${provider.id}`}
-                          >
-                            <span>{provider.short}</span>
-                            {busyAction === `oauth-${provider.id}` ? '연결 중...' : provider.label}
-                          </button>
-                        ))}
-                      </div>
-                      {oauthChecked && !hasOAuthProvider ? (
-                        <p className="oauth-note">소셜 로그인은 운영자가 Provider 설정을 켜면 자동으로 표시됩니다.</p>
+                      {hasOAuthProvider ? (
+                        <div className="social-auth" aria-label="소셜 로그인">
+                          {OAUTH_BUTTONS.filter((provider) => oauthEnabled[provider.id]).map((provider) => (
+                            <button
+                              className={`oauth-button ${provider.id}`}
+                              type="button"
+                              key={provider.id}
+                              onClick={() => startOAuth(provider.id)}
+                              disabled={!oauthChecked || busyAction === `oauth-${provider.id}`}
+                            >
+                              <span>{provider.short}</span>
+                              {busyAction === `oauth-${provider.id}` ? '연결 중...' : provider.label}
+                            </button>
+                          ))}
+                        </div>
                       ) : null}
 
                       <div className="auth-tabs" aria-label="계정 모드">

@@ -2356,6 +2356,71 @@ button:disabled {
   }
 }
 
+.profile-top {
+  min-height: 66px;
+}
+
+.profile-top .intro-title strong {
+  font-size: 18px;
+}
+
+.profile-top .profile-chip {
+  min-height: 30px;
+}
+
+.install-panel,
+.app-settings-panel {
+  display: none;
+}
+
+.clean-profile {
+  grid-template-columns: minmax(360px, 520px) minmax(280px, 420px);
+  align-items: start;
+}
+
+.primary-auth {
+  grid-row: span 2;
+}
+
+.profile-panel {
+  border-radius: 10px;
+  box-shadow: 0 1px 5px rgba(43, 39, 66, 0.05);
+}
+
+.egg-auth {
+  background: #ffffff;
+}
+
+.compact-auth .account-form {
+  grid-template-columns: 1fr;
+}
+
+.compact-auth .field:first-child {
+  grid-column: auto;
+}
+
+.pretty-auth {
+  padding-top: 2px;
+}
+
+.auth-tabs {
+  background: #f5f2fb;
+}
+
+.auth-tabs button.active {
+  color: #6f5bc8;
+}
+
+.account-form input,
+.track-form input {
+  min-height: 44px;
+}
+
+.xbox-panel .primary-button,
+.primary-auth .primary-button {
+  background: #8d78df;
+}
+
 @media (max-width: 520px) {
   .profile-hero h1 {
     font-size: 24px;

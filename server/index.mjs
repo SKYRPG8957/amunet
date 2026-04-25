@@ -223,6 +223,7 @@ function writeJson(res, status, payload) {
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET,POST,OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, x-amunet-admin-key',
+    'Access-Control-Allow-Private-Network': 'true',
     'Cache-Control': 'no-store',
   });
   res.end(JSON.stringify(payload));

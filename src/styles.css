@@ -25,6 +25,28 @@
   --shadow: 0 16px 36px rgba(43, 39, 66, 0.1);
 }
 
+:root[data-theme="dark"] {
+  color: #f4f0ff;
+  background: #12101d;
+  --bg: #12101d;
+  --rail: #1b182a;
+  --panel: #1f1b31;
+  --panel-soft: #28233d;
+  --line: #40375e;
+  --line-strong: #62548d;
+  --ink: #f4f0ff;
+  --muted: #beb4dc;
+  --blue: #c1a8ff;
+  --blue-strong: #a98bf5;
+  --accent-soft: #30294a;
+  --moon: #ffe9a8;
+  --night: #151224;
+  --green: #53d58e;
+  --amber: #ffd06b;
+  --red: #ff8a7c;
+  --shadow: 0 20px 48px rgba(0, 0, 0, 0.32);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -39,6 +61,14 @@ body {
     linear-gradient(90deg, rgba(94, 82, 146, 0.045) 1px, transparent 1px),
     var(--bg);
   background-size: 24px 24px;
+}
+
+:root[data-theme="dark"] body {
+  background:
+    radial-gradient(circle at 18% 10%, rgba(255, 232, 168, 0.14), transparent 25%),
+    linear-gradient(rgba(193, 168, 255, 0.055) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(193, 168, 255, 0.055) 1px, transparent 1px),
+    var(--bg);
 }
 
 button,
@@ -69,6 +99,11 @@ button:disabled {
   box-shadow: 0 24px 70px rgba(43, 39, 66, 0.14);
 }
 
+:root[data-theme="dark"] .eggnet-app {
+  background: rgba(24, 21, 38, 0.96);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.42);
+}
+
 .rail {
   position: relative;
   top: auto;
@@ -80,6 +115,10 @@ button:disabled {
   padding: 14px 8px;
   border-right: 1px solid var(--line);
   background: #f0edf8;
+}
+
+:root[data-theme="dark"] .rail {
+  background: var(--rail);
 }
 
 .rail-brand {
@@ -112,6 +151,11 @@ button:disabled {
   border-radius: 50%;
   border: 0;
   background: transparent;
+}
+
+.brand-mark.small {
+  width: 42px;
+  height: 42px;
 }
 
 .brand-mark::before {
@@ -178,6 +222,10 @@ button:disabled {
   background: #eeeafd;
 }
 
+.theme-toggle {
+  margin-top: auto;
+}
+
 .rail button svg {
   flex: 0 0 auto;
   width: 19px;
@@ -207,6 +255,10 @@ button:disabled {
   margin: 0;
   padding: 16px;
   background: rgba(252, 251, 255, 0.9);
+}
+
+:root[data-theme="dark"] .shell {
+  background: rgba(18, 16, 29, 0.72);
 }
 
 .intro,
@@ -244,6 +296,12 @@ button:disabled {
   background:
     linear-gradient(90deg, rgba(255, 255, 255, 0.98), rgba(247, 244, 255, 0.98)),
     #ffffff;
+}
+
+:root[data-theme="dark"] .server-hero {
+  background:
+    linear-gradient(90deg, rgba(31, 27, 49, 0.98), rgba(40, 35, 61, 0.98)),
+    var(--panel);
 }
 
 .intro.compact {
@@ -1088,6 +1146,20 @@ button:disabled {
   white-space: nowrap;
 }
 
+:root[data-theme="dark"] .oauth-button,
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  color: var(--ink);
+  border-color: var(--line);
+  background: #171426;
+}
+
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #9f93c4;
+}
+
 .oauth-button:hover {
   border-color: #bfb2e8;
   background: #f7f4ff;
@@ -1166,6 +1238,10 @@ button:disabled {
   background: #f0edf8;
 }
 
+:root[data-theme="dark"] .auth-tabs {
+  background: #171426;
+}
+
 .auth-tabs button {
   min-height: 36px;
   border: 0;
@@ -1179,6 +1255,10 @@ button:disabled {
   color: var(--blue);
   background: #ffffff;
   box-shadow: 0 3px 10px rgba(43, 39, 66, 0.07);
+}
+
+:root[data-theme="dark"] .auth-tabs button.active {
+  background: #2d2745;
 }
 
 .auth-card-head {
@@ -1247,6 +1327,13 @@ button:disabled {
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #faf9ff;
+}
+
+:root[data-theme="dark"] .account-card,
+:root[data-theme="dark"] .egg-auth,
+:root[data-theme="dark"] .setting-list div,
+:root[data-theme="dark"] .auth-card-head {
+  background: var(--panel-soft);
 }
 
 .account-card > svg {
@@ -1653,6 +1740,41 @@ button:disabled {
   box-shadow: 0 24px 70px rgba(20, 34, 52, 0.25);
 }
 
+.auth-modal {
+  position: relative;
+  display: grid;
+  gap: 14px;
+  width: min(460px, 100%);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 20px;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(255, 232, 168, 0.26), transparent 34%),
+    var(--panel);
+  box-shadow: var(--shadow);
+}
+
+.auth-modal .social-auth {
+  grid-template-columns: 1fr;
+}
+
+.modal-auth-form {
+  display: grid;
+  grid-template-columns: 1fr;
+}
+
+.link-button {
+  border: 0;
+  color: var(--blue-strong);
+  font-size: 12px;
+  font-weight: 900;
+  background: transparent;
+}
+
+:root[data-theme="dark"] .modal-backdrop {
+  background: rgba(5, 4, 10, 0.62);
+}
+
 .modal-close {
   position: absolute;
   top: 12px;
@@ -1693,6 +1815,11 @@ button:disabled {
   width: 38px;
   height: 38px;
   background: #ffffff;
+}
+
+:root[data-theme="dark"] .egg-icon::after,
+:root[data-theme="dark"] .brand-mark::after {
+  background: var(--rail);
 }
 
 .benefit-box {
@@ -1759,6 +1886,39 @@ button:disabled {
   text-align: left;
   background: #172231;
   box-shadow: 0 18px 36px rgba(0, 0, 0, 0.2);
+}
+
+:root[data-theme="dark"] .server-card,
+:root[data-theme="dark"] .presence-card,
+:root[data-theme="dark"] .chat-panel,
+:root[data-theme="dark"] .profile-panel,
+:root[data-theme="dark"] .login-banner,
+:root[data-theme="dark"] .intro,
+:root[data-theme="dark"] .search-row,
+:root[data-theme="dark"] .join-modal,
+:root[data-theme="dark"] .empty-state,
+:root[data-theme="dark"] .directory-filter,
+:root[data-theme="dark"] .world-detail,
+:root[data-theme="dark"] .download-panel,
+:root[data-theme="dark"] .install-panel {
+  background: var(--panel);
+}
+
+:root[data-theme="dark"] .secondary-button,
+:root[data-theme="dark"] .icon-button,
+:root[data-theme="dark"] .download-button,
+:root[data-theme="dark"] .track-form button,
+:root[data-theme="dark"] .chat-composer button {
+  color: var(--ink);
+  border-color: var(--line);
+  background: #241f36;
+}
+
+:root[data-theme="dark"] .primary-button,
+:root[data-theme="dark"] .download-button.primary {
+  color: #181526;
+  background: linear-gradient(135deg, #ffe8a8, #bba6ff);
+  border-color: transparent;
 }
 
 .spin {

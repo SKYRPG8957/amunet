@@ -12,6 +12,7 @@ import {
   Loader2,
   LogOut,
   MessageSquare,
+  MoonStar,
   Play,
   Power,
   RefreshCw,
@@ -20,6 +21,7 @@ import {
   Server,
   ShieldCheck,
   Square,
+  Sun,
   UserRound,
   Users,
   Wifi,
@@ -128,6 +130,7 @@ const defaultTarget = {
 const WORLD_CACHE_KEY = 'luma:world-feed:v1';
 const PRESENCE_CACHE_KEY = 'luma:presence-feed:v1';
 const ADMIN_KEY_STORAGE_KEY = 'luma:admin-key:v1';
+const THEME_STORAGE_KEY = 'luma:theme:v1';
 const WORLD_CACHE_MS = 45_000;
 const PRESENCE_CACHE_MS = 120_000;
 const nativeShellApiBase =
@@ -334,6 +337,16 @@ function App() {
   const [oauthEnabled, setOauthEnabled] = useState<OAuthAvailability>(defaultOAuthAvailability);
   const [oauthChecked, setOauthChecked] = useState(false);
   const [authMode, setAuthMode] = useState<AuthMode>('login');
+  const [authOpen, setAuthOpen] = useState(false);
+  const [theme, setTheme] = useState<'light' | 'dark'>(() => {
+    try {
+      const saved = window.localStorage.getItem(THEME_STORAGE_KEY);
+      if (saved === 'light' || saved === 'dark') return saved;
+    } catch {
+      // Ignore storage failures.
+    }
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  });
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
@@ -367,6 +380,15 @@ function App() {
       if (id) window.clearInterval(id);
     };
   }, [adminMode]);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      window.localStorage.setItem(THEME_STORAGE_KEY, theme);
+    } catch {
+      // Ignore storage failures.
+    }
+  }, [theme]);
 
   useEffect(() => {
     const subscription = onCloudAuthChange((user) => {
@@ -548,6 +570,19 @@ function App() {
     }
   }
 
+  function openAuth(mode: AuthMode = 'login') {
+    setAuthMode(mode);
+    setAuthOpen(true);
+    setTab('profile');
+  }
+
+  function requireCloudAuth(message = 'Luma 계정으로 로그인하세요.') {
+    if (!isBackendConfigured || cloudUser) return false;
+    setToast(message);
+    openAuth('login');
+    return true;
+  }
+
   async function loadWorlds(force = false, refreshKey = '') {
     type WorldsPayload = { worlds: ActivityWorld[]; count?: number; providers?: WorldProviderStatus[] };
     const cached = !force ? readCachedPayload<WorldsPayload>(WORLD_CACHE_KEY) : null;
@@ -610,6 +645,7 @@ function App() {
 
   async function sendChat(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (requireCloudAuth('채팅은 Luma 계정 로그인 후 사용할 수 있습니다.')) return;
     setBusyAction('chat-send');
 
     try {
@@ -698,11 +734,6 @@ function App() {
   }
 
   async function startXboxLogin() {
-    if (isBackendConfigured && !cloudUser && !isDesktopApp && !Capacitor.isNativePlatform()) {
-      setToast('먼저 Luma 계정으로 로그인하세요.');
-      return;
-    }
-
     if (!capabilities.xboxLogin) {
       setToast('클라우드 Edge 모드에서는 Xbox device-code 로그인을 실행할 수 없습니다.');
       return;
@@ -755,7 +786,9 @@ function App() {
         await signInPasswordCloud(email, password);
         setToast('Luma 계정 로그인 완료');
       }
-      setCloudUser(await getCloudUser());
+      const nextUser = await getCloudUser();
+      setCloudUser(nextUser);
+      if (nextUser) setAuthOpen(false);
       setPassword('');
     } catch (error) {
       setToast(messageFrom(error));
@@ -816,6 +849,7 @@ function App() {
 
   async function saveTrackedXuid(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (requireCloudAuth('친구 프로필 저장은 Luma 계정 로그인 후 사용할 수 있습니다.')) return;
     const lookup = trackInput.trim();
     setBusyAction('track-profile');
 
@@ -934,15 +968,15 @@ function App() {
   }
 
   return (
-    <div className={`luma-app eggnet-app ${runtimeClass}`}>
+    <div className={`luma-app eggnet-app ${runtimeClass}`} data-theme={theme}>
       <aside className="rail">
-        <div className="rail-brand">
-          <span className="brand-mark">L</span>
+        <button className="rail-brand" type="button" onClick={() => setTab('servers')} aria-label="Luma 홈">
+          <span className="brand-mark" />
           <div>
             <strong>Luma Arcade</strong>
             <small>Bedrock arcade</small>
           </div>
-        </div>
+        </button>
         <nav className="rail-nav" aria-label="Luma navigation">
           <button className={tab === 'servers' ? 'active' : ''} type="button" onClick={() => setTab('servers')}>
             <Server size={19} />
@@ -963,6 +997,14 @@ function App() {
             </button>
           ) : null}
         </nav>
+        <button
+          className="theme-toggle"
+          type="button"
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+          aria-label={theme === 'dark' ? '라이트 모드' : '다크 모드'}
+        >
+          {theme === 'dark' ? <Sun size={18} /> : <MoonStar size={18} />}
+        </button>
         <div className="rail-status">
           <StatusDot active={!worlds.error} />
           <span>{capabilities.supabaseEdge ? 'Edge online' : 'Local mode'}</span>
@@ -1232,13 +1274,22 @@ function App() {
                 <input
                   value={chatInput}
                   onChange={(event) => setChatInput(event.target.value)}
-                  placeholder={isBackendConfigured && !cloudUser ? 'Luma 계정으로 로그인하면 채팅할 수 있습니다.' : '메시지 입력...'}
-                  disabled={isBackendConfigured && !cloudUser}
+                  onFocus={() => {
+                    if (isBackendConfigured && !cloudUser) openAuth('login');
+                  }}
+                  placeholder={isBackendConfigured && !cloudUser ? '로그인하고 채팅하기' : '메시지 입력...'}
+                  readOnly={isBackendConfigured && !cloudUser}
                   maxLength={500}
                 />
-                <button type="submit" disabled={!chatInput.trim() || busyAction === 'chat-send' || (isBackendConfigured && !cloudUser)}>
+                <button
+                  type={isBackendConfigured && !cloudUser ? 'button' : 'submit'}
+                  onClick={() => {
+                    if (isBackendConfigured && !cloudUser) openAuth('login');
+                  }}
+                  disabled={busyAction === 'chat-send' || (!chatInput.trim() && !(isBackendConfigured && !cloudUser))}
+                >
                   {busyAction === 'chat-send' ? <Loader2 className="spin" size={16} /> : <Send size={16} />}
-                  전송
+                  {isBackendConfigured && !cloudUser ? '로그인' : '전송'}
                 </button>
               </form>
             </section>
@@ -1397,22 +1448,22 @@ function App() {
                 ) : (
                   <>
                     <div className="egg-auth compact-auth">
-                      {hasOAuthProvider ? (
-                        <div className="social-auth" aria-label="소셜 로그인">
-                          {OAUTH_BUTTONS.filter((provider) => oauthEnabled[provider.id]).map((provider) => (
+                      <div className="social-auth" aria-label="소셜 로그인">
+                          {OAUTH_BUTTONS.map((provider) => (
                             <button
-                              className={`oauth-button ${provider.id}`}
+                              className={`oauth-button ${provider.id}${!oauthEnabled[provider.id] ? ' disabled' : ''}`}
                               type="button"
                               key={provider.id}
                               onClick={() => startOAuth(provider.id)}
                               disabled={!oauthChecked || busyAction === `oauth-${provider.id}`}
+                              title={oauthEnabled[provider.id] ? provider.label : 'Supabase Auth Provider 설정 필요'}
                             >
                               <span>{provider.short}</span>
                               {busyAction === `oauth-${provider.id}` ? '연결 중...' : provider.label}
                             </button>
                           ))}
-                        </div>
-                      ) : null}
+                      </div>
+                      {!hasOAuthProvider ? <p className="oauth-note">소셜 로그인은 Supabase Auth Provider를 켜면 바로 활성화됩니다.</p> : null}
 
                       <div className="auth-tabs" aria-label="계정 모드">
                         <button className={authMode === 'login' ? 'active' : ''} type="button" onClick={() => setAuthMode('login')}>
@@ -1476,11 +1527,20 @@ function App() {
                     value={trackInput}
                     onChange={(event) => setTrackInput(event.target.value)}
                     placeholder={cloudUser ? 'Xbox 게이머태그 입력' : '로그인 후 검색 가능'}
-                    disabled={isBackendConfigured && !cloudUser}
+                    readOnly={isBackendConfigured && !cloudUser}
+                    onFocus={() => {
+                      if (isBackendConfigured && !cloudUser) openAuth('login');
+                    }}
                   />
-                  <button type="submit" disabled={!trackInput.trim() || busyAction === 'track-profile' || (isBackendConfigured && !cloudUser)}>
+                  <button
+                    type={isBackendConfigured && !cloudUser ? 'button' : 'submit'}
+                    onClick={() => {
+                      if (isBackendConfigured && !cloudUser) openAuth('login');
+                    }}
+                    disabled={busyAction === 'track-profile' || (!trackInput.trim() && !(isBackendConfigured && !cloudUser))}
+                  >
                     {busyAction === 'track-profile' ? <Loader2 className="spin" size={15} /> : <Search size={15} />}
-                    찾기
+                    {isBackendConfigured && !cloudUser ? '로그인' : '찾기'}
                   </button>
                 </form>
                 <p className="lookup-hint">공개 월드 피드에 보이는 게이머태그를 찾아 자동으로 프로필을 저장합니다.</p>
@@ -1523,7 +1583,7 @@ function App() {
                     className="primary-button full"
                     type="button"
                     onClick={startXboxLogin}
-                    disabled={busyAction === 'xbox-login' || (isBackendConfigured && !cloudUser)}
+                    disabled={busyAction === 'xbox-login'}
                   >
                     {busyAction === 'xbox-login' ? <Loader2 className="spin" size={17} /> : <KeyRound size={17} />}
                     {capabilities.xboxLogin ? 'Xbox 연동' : '앱에서 연동'}
@@ -1541,7 +1601,7 @@ function App() {
                   </div>
                 ) : null}
                 {xbox.error ? <p className="error-text">{xbox.error}</p> : null}
-                {isBackendConfigured && !cloudUser ? <p className="muted-text">Luma 계정 로그인 후 사용할 수 있습니다.</p> : null}
+                {isBackendConfigured && !cloudUser ? <p className="muted-text">Xbox 연동은 PC 앱에서 Luma 계정 없이도 시작할 수 있습니다.</p> : null}
                 {!capabilities.xboxLogin ? <p className="muted-text">PC 앱에서 Xbox 연동과 브리지를 실행합니다.</p> : null}
               </article>
             </section>
@@ -1786,6 +1846,70 @@ function App() {
               </button>
             </div>
             <p>웹에서는 게스트로 이용할 수 있지만, 실제 참가 안정성은 Minecraft 앱과 플랫폼 프로토콜 처리 상태에 좌우됩니다.</p>
+          </section>
+        </div>
+      ) : null}
+
+      {authOpen && !cloudUser ? (
+        <div className="modal-backdrop auth-backdrop" role="dialog" aria-modal="true" aria-label="Luma 로그인">
+          <section className="auth-modal">
+            <button className="modal-close" type="button" onClick={() => setAuthOpen(false)} aria-label="닫기">
+              <X size={18} />
+            </button>
+            <div className="modal-title">
+              <span className="brand-mark small" />
+              <div>
+                <small>Luma Account</small>
+                <h2>{authMode === 'signup' ? '계정 만들기' : '로그인'}</h2>
+              </div>
+            </div>
+            <div className="social-auth" aria-label="소셜 로그인">
+              {OAUTH_BUTTONS.map((provider) => (
+                <button
+                  className={`oauth-button ${provider.id}${!oauthEnabled[provider.id] ? ' disabled' : ''}`}
+                  type="button"
+                  key={provider.id}
+                  onClick={() => startOAuth(provider.id)}
+                  disabled={!oauthChecked || busyAction === `oauth-${provider.id}`}
+                  title={oauthEnabled[provider.id] ? provider.label : 'Supabase Auth Provider 설정 필요'}
+                >
+                  <span>{provider.short}</span>
+                  {busyAction === `oauth-${provider.id}` ? '연결 중...' : provider.label}
+                </button>
+              ))}
+            </div>
+            {!hasOAuthProvider ? <p className="oauth-note">지금은 이메일 계정으로 바로 로그인할 수 있습니다.</p> : null}
+            <div className="auth-tabs" aria-label="계정 모드">
+              <button className={authMode === 'login' ? 'active' : ''} type="button" onClick={() => setAuthMode('login')}>
+                로그인
+              </button>
+              <button className={authMode === 'signup' ? 'active' : ''} type="button" onClick={() => setAuthMode('signup')}>
+                가입
+              </button>
+            </div>
+            <form className="account-form pretty-auth modal-auth-form" onSubmit={submitCloudAuth}>
+              {authMode === 'signup' ? (
+                <label className="field">
+                  <span>닉네임</span>
+                  <input value={displayName} onChange={(event) => setDisplayName(event.target.value)} placeholder="표시할 이름" maxLength={24} />
+                </label>
+              ) : null}
+              <label className="field">
+                <span>이메일</span>
+                <input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="email@example.com" type="email" autoFocus />
+              </label>
+              <label className="field">
+                <span>비밀번호</span>
+                <input value={password} onChange={(event) => setPassword(event.target.value)} placeholder="6자 이상" type="password" minLength={6} />
+              </label>
+              <button className="primary-button full" type="submit" disabled={!email.trim() || password.length < 6 || busyAction === `cloud-${authMode}`}>
+                {busyAction === `cloud-${authMode}` ? <Loader2 className="spin" size={16} /> : <KeyRound size={16} />}
+                {authMode === 'signup' ? '계정 만들기' : '로그인'}
+              </button>
+            </form>
+            <button className="link-button" type="button" onClick={sendMagicLink} disabled={!email.trim() || busyAction === 'cloud-link'}>
+              비밀번호 없이 메일 링크로 로그인
+            </button>
           </section>
         </div>
       ) : null}

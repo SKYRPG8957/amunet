@@ -4,8 +4,8 @@
   "description": "Minecraft Bedrock world discovery and community",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#f2f5f8",
-  "theme_color": "#2f66d8",
+  "background_color": "#12101d",
+  "theme_color": "#7f58ff",
   "icons": [
     {
       "src": "/app-icon.svg",
